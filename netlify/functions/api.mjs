@@ -1,10 +1,12 @@
-/* FleetDeck API — REST peste Netlify Blobs, cu login simplu
-   Autentificare: Basic auth (utilizator + parola comună a echipei).
-   Parola echipei = env APP_PASSWORD (implicit "fleetdeck" dacă nu e setată).
-   Primul login cu un nume nou creează automat garajul gol al acelui user.
+/* FleetDeck API — REST peste Netlify Blobs, cu conturi individuale
+   Fiecare utilizator are propriul cont (nume + parola LUI, hash pe server)
+   și propriul e-mail pentru remindere. Primul login cu un nume nou creează
+   contul cu parola introdusă — fără e-mail de confirmare, fără flow-uri.
    Fiecare user își vede DOAR mașinile lui (chei separate în Blobs).
 
-   POST   /api/login                        — verifică user + parolă → { ok, user }
+   POST   /api/login                        — login SAU creare cont (nume nou) → { ok, user, email, created? }
+   GET    /api/account                      — profilul userului { user, email }
+   PATCH  /api/account                      — setează e-mailul de remindere { email }
    GET    /api/vehicles                     — lista mașinilor userului
    POST   /api/vehicles                     — creează (validat, id generat de server)
    GET    /api/vehicles/:id                 — o mașină
@@ -23,6 +25,7 @@ const DOC_LABELS = { itp: "ITP", rca: "RCA", rovinieta: "Rovinietă", casco: "CA
 const VEHICLE_FIELDS = ["make", "model", "plate", "year", "fuel", "vin", "km", "kmUpdatedAt", "tyres", "tyresNote", "nextServiceKm", "nextServiceDate"];
 const EVENT_KINDS = ["fuel", "maintenance", "expense", "document"];
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const json = (d, s = 200) => Response.json(d, { status: s });
 const err = (m, s = 400) => json({ error: m }, s);
@@ -30,14 +33,18 @@ const uid = () => crypto.randomUUID();
 const now = () => new Date().toISOString();
 const pick = (obj, keys) => Object.fromEntries(Object.entries(obj || {}).filter(([k]) => keys.includes(k)));
 
-/* ---------- autentificare (simplă, intenționat) ---------- */
+/* ---------- conturi ---------- */
 function normalizeUser(u) {
   u = String(u || "").trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9ăâîșț._-]/g, "");
   return u.length >= 2 && u.length <= 40 ? u : null;
 }
-function auth(req) {
-  const h = req.headers.get("authorization") || "";
-  const m = h.match(/^Basic (.+)$/i);
+async function hashPass(pass, salt) {
+  const data = new TextEncoder().encode(salt + ":" + pass);
+  const h = await crypto.subtle.digest("SHA-256", data);
+  return Buffer.from(h).toString("hex");
+}
+function parseBasic(req) {
+  const m = (req.headers.get("authorization") || "").match(/^Basic (.+)$/i);
   if (!m) return null;
   let dec;
   try { dec = Buffer.from(m[1], "base64").toString("utf8"); } catch { return null; }
@@ -45,11 +52,20 @@ function auth(req) {
   if (i < 1) return null;
   const user = normalizeUser(dec.slice(0, i));
   const pass = dec.slice(i + 1);
-  const expected = process.env.APP_PASSWORD || "fleetdeck";
-  return user && pass === expected ? user : null;
+  return user && pass ? { user, pass } : null;
+}
+/* → { user, account } dacă parola e corectă; "wrong" dacă e greșită;
+     { user, missing:true } dacă contul nu există; null dacă lipsesc credențialele */
+async function auth(req, store) {
+  const c = parseBasic(req);
+  if (!c) return null;
+  const account = await store.get("account:" + c.user, { type: "json" });
+  if (!account) return { user: c.user, pass: c.pass, missing: true };
+  const ok = (await hashPass(c.pass, account.salt)) === account.passHash;
+  return ok ? { user: c.user, account } : "wrong";
 }
 
-/* ---------- stocare: un blob per mașină, în spațiul userului ---------- */
+/* ---------- stocare mașini: un blob per mașină, în spațiul userului ---------- */
 const key = (user, id) => `user:${user}:vehicle:${id}`;
 const getV = (store, user, id) => store.get(key(user, id), { type: "json" });
 const saveV = (store, user, v) => store.setJSON(key(user, v.id), v);
@@ -62,25 +78,6 @@ async function listVehicles(store, user) {
     if (v) out.push(v);
   }
   return out.sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""));
-}
-
-/* migrare din formatele vechi (fără useri) → contul "admin" */
-async function migrateLegacy(store) {
-  const old = await store.get("state", { type: "json" });
-  if (old?.vehicles?.length) {
-    for (const v of old.vehicles) {
-      v.id ||= uid();
-      v.createdAt ||= now();
-      await saveV(store, "admin", v);
-    }
-    await store.delete("state");
-  }
-  const { blobs } = await store.list({ prefix: "vehicle:" });
-  for (const b of blobs) {
-    const v = await store.get(b.key, { type: "json" });
-    if (v) await store.setJSON(key("admin", v.id || uid()), v);
-    await store.delete(b.key);
-  }
 }
 
 /* ---------- validare ---------- */
@@ -123,20 +120,49 @@ export default async (req) => {
   try {
     if (p[0] === "health") return json({ ok: true });
 
+    /* login SAU creare de cont (nume nou) */
     if (p[0] === "login") {
       if (m !== "POST") return err("metodă nepermisă", 405);
-      const user = auth(req);
-      return user ? json({ ok: true, user }) : err("utilizator sau parolă incorecte", 401);
+      const a = await auth(req, store);
+      if (a === null) return err("introdu numele și parola", 401);
+      if (a === "wrong") return err("parolă greșită pentru acest utilizator", 401);
+      if (a.missing) {
+        if (a.pass.length < 4) return err("parola trebuie să aibă minim 4 caractere", 400);
+        const account = { user: a.user, salt: uid(), email: null, createdAt: now() };
+        account.passHash = await hashPass(a.pass, account.salt);
+        await store.setJSON("account:" + a.user, account);
+        return json({ ok: true, user: a.user, email: null, created: true }, 201);
+      }
+      return json({ ok: true, user: a.user, email: a.account.email });
+    }
+
+    /* de aici încolo: doar cu cont valid */
+    const a = await auth(req, store);
+    if (a === null || a === "wrong" || a.missing) return err("autentificare necesară", 401);
+    const user = a.user;
+
+    /* /api/account — profil (e-mail pentru remindere) */
+    if (p[0] === "account") {
+      if (m === "GET") return json({ user, email: a.account.email });
+      if (m === "PATCH") {
+        const b = await req.json();
+        let email = null;
+        if (b.email != null && b.email !== "") {
+          email = String(b.email).trim().toLowerCase();
+          if (!EMAIL_RE.test(email)) return err("adresă de e-mail invalidă");
+        }
+        a.account.email = email;
+        await store.setJSON("account:" + user, a.account);
+        return json({ user, email });
+      }
+      return err("metodă nepermisă", 405);
     }
 
     if (p[0] !== "vehicles") return err("rută necunoscută", 404);
 
-    const user = auth(req);
-    if (!user) return err("autentificare necesară", 401);
-
     /* /api/vehicles */
     if (p.length === 1) {
-      if (m === "GET") { await migrateLegacy(store); return json(await listVehicles(store, user)); }
+      if (m === "GET") return json(await listVehicles(store, user));
       if (m === "POST") {
         const b = await req.json();
         if (!b?.make || !b?.plate) return err("marca și numărul de înmatriculare sunt obligatorii");

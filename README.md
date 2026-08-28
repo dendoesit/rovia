@@ -52,33 +52,38 @@ După primul deploy, în Netlify → *Site configuration → Environment variabl
 
 | Variabilă | Rol |
 |---|---|
-| `APP_PASSWORD` | parola comună de login (implicit `fleetdeck` — schimb-o!) |
-| `RESEND_API_KEY` | opțional, pentru e-mailurile zilnice ([resend.com](https://resend.com), gratuit) |
-| `REMINDER_EMAIL` | unde ajung alertele (mai multe adrese, separate prin virgulă) |
-| `REMINDER_FROM` | opțional, expeditorul |
+| `RESEND_API_KEY` | pentru e-mailurile zilnice ([resend.com](https://resend.com), gratuit) — fără ea aplicația merge, doar nu trimite mailuri |
+| `REMINDER_FROM` | opțional, expeditorul (implicit `FleetDeck <onboarding@resend.dev>`) |
+
+Atât. **Nu există parolă globală** — fiecare utilizator își creează contul cu parola lui la primul login, iar destinatarul reminderelor e e-mailul pe care fiecare și-l setează singur din profil (👤).
 
 După ce le adaugi: *Deploys → Trigger deploy*, ca să le prindă funcțiile.
+
+Toate sunt **doar pentru backend** (funcții) — frontend-ul nu are nevoie de nicio variabilă. Pentru rulare locală cu `npx netlify dev`: copiază `.env.example` ca `.env` și completează-l (e ignorat de Git).
 
 **Verificare:** deschizi site-ul, te loghezi, iar în header trebuie să scrie **„☁ sincronizat”**. Dacă scrie „💾 local”, funcțiile nu s-au publicat (aproape sigur ai făcut drag-and-drop).
 
 ## Utilizatori și login (intenționat simplu)
 
-„Useri ținuți pe o hârtie”: orice nume + parola comună a echipei. Fără înregistrare — primul login cu un nume nou îi creează automat garajul gol. Esențialul e pe server: **fiecare utilizator își vede doar mașinile lui** (chei separate în Blobs, verificate la fiecare request, nu doar ascunse în interfață).
+Fiecare utilizator are **contul lui, cu parola lui** — fără e-mail de confirmare, fără flow de înregistrare: primul login cu un nume nou creează contul cu parola introdusă atunci (minim 4 caractere; ține-o minte, nu există recuperare încă). Esențialul e pe server: **fiecare utilizator își vede doar mașinile lui** (chei separate în Blobs, verificate la fiecare request, nu doar ascunse în interfață).
 
 - Numele se normalizează: `Dan Popoutanu` → `dan-popoutanu`.
+- Parolele se stochează doar ca hash (SHA-256 + salt per cont), niciodată în clar.
 - Autentificare: Basic auth pe fiecare request; sesiunea rămâne în browser („Ieși” în header).
-- Datele din formatele vechi (fără useri) migrează automat în contul `admin`.
+- Din profil (**👤** în header) fiecare își setează **e-mailul de remindere** — acolo îi ajung alertele zilnice, doar pentru mașinile lui.
 
 ## E-mailuri de reamintire
 
-`notify.mjs` rulează zilnic la 05:00 UTC și trimite un rezumat: la exact **30** și **15 zile** înainte de expirare, apoi **zilnic de la 5 zile în jos** și zilnic după expirare; pentru service: când mai sunt ≤800 km sau la aceleași praguri pe dată. Acoperă mașinile tuturor utilizatorilor, cu numele proprietarului pe fiecare rând. Test manual: Netlify → *Functions → notify*.
+`notify.mjs` rulează zilnic la 05:00 UTC. **Fiecare utilizator primește propriul e-mail, doar cu mașinile lui**, la adresa setată în profil (👤). Praguri: la exact **30** și **15 zile** înainte de expirare, apoi **zilnic de la 5 zile în jos** și zilnic după expirare; pentru service: când mai sunt ≤800 km sau la aceleași praguri pe dată. Utilizatorii fără e-mail setat nu primesc nimic (alertele rămân în aplicație). Test manual: Netlify → *Functions → notify*.
 
 ## API (backend)
 
 Toate rutele `vehicles` cer autentificare (altfel 401).
 
 ```
-POST   /api/login                        verifică user + parolă
+POST   /api/login                        login SAU creare cont (nume nou)
+GET    /api/account                      profilul userului { user, email }
+PATCH  /api/account                      setează e-mailul de remindere
 GET    /api/vehicles                     lista mașinilor userului
 POST   /api/vehicles                     creează (validare + id generat de server)
 GET    /api/vehicles/:id                 o mașină

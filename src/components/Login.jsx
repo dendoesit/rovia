@@ -12,7 +12,7 @@ export default function Login({ onLogin, error, busy }) {
     <main className="wrap">
       <div className="login-card">
         <div className="logo" style={{ fontSize: 26, cursor: "default" }}>Fleet<span>Deck</span></div>
-        <p className="muted" style={{ marginTop: 6 }}>Numele tău + parola echipei.</p>
+        <p className="muted" style={{ marginTop: 6 }}>Intră în garajul tău.</p>
         <form onSubmit={submit}>
           <div className="field">
             <label>Utilizator</label>
@@ -21,7 +21,7 @@ export default function Login({ onLogin, error, busy }) {
           </div>
           <div className="field">
             <label>Parolă</label>
-            <input type="password" autoComplete="current-password" placeholder="parola echipei"
+            <input type="password" autoComplete="current-password" placeholder="parola ta"
               value={p} onChange={(e) => setP(e.target.value)} />
           </div>
           {error && <div className="login-err">⚠ {error}</div>}
@@ -29,7 +29,8 @@ export default function Login({ onLogin, error, busy }) {
             {busy ? "Se verifică…" : "Intră"}
           </button>
         </form>
-        <div className="hint">Primul login cu un nume nou îi creează automat garajul gol. Fiecare utilizator își vede doar mașinile lui.</div>
+        <div className="hint">Nume nou? Contul se creează automat cu parola pe care o introduci acum (minim 4 caractere) — ține-o minte. Fiecare utilizator își vede doar mașinile lui.</div>
+        <div className="hint" style={{ opacity: 0.6 }}>v3 · conturi individuale</div>
       </div>
     </main>
   );

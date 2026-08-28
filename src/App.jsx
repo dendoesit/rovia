@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { initApi, cloudLogin, setApiSession, normalizeUser } from "./lib/api";
+import { initApi, cloudLogin, setApiSession, normalizeUser, getAccountEmail, saveAccountEmail } from "./lib/api";
 import { parseHash, nav } from "./lib/nav";
 import { demoVehicle } from "./lib/model";
 import AlertStrip from "./components/AlertStrip";
@@ -20,29 +20,41 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [loginError, setLoginError] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [accountEmail, setAccountEmail] = useState(null);
 
   /* autentificare + încărcarea garajului userului */
   useEffect(() => {
     if (!session) { setApi(null); setVehicles([]); return; }
     let cancelled = false;
     (async () => {
-      setBusy(true);
-      const res = await cloudLogin(session.user, session.pass);
-      if (cancelled) return;
-      setBusy(false);
-      if (res.mode === "denied") {
+      try {
+        setBusy(true);
+        const res = await cloudLogin(session.user, session.pass);
+        if (cancelled) return;
+        setBusy(false);
+        if (res.mode === "denied") {
+          localStorage.removeItem(SESSION_KEY);
+          setSession(null);
+          setLoginError(res.error || "utilizator sau parolă incorecte");
+          return;
+        }
+        const user = res.user || normalizeUser(session.user) || session.user;
+        setApiSession({ user, pass: session.pass, mode: res.mode });
+        const { api, vehicles } = await initApi(res.mode);
+        if (cancelled) return;
+        setApi(api);
+        setVehicles(vehicles);
+        setLoginError(null);
+        setAccountEmail(res.mode === "cloud" ? res.email ?? null : await getAccountEmail());
+        if (res.created) setToast(`👋 Cont creat pentru ${user} — ține minte parola!`);
+      } catch (e) {
+        /* orice eroare devine VIZIBILĂ pe ecranul de login, niciodată tăcere */
+        if (cancelled) return;
+        setBusy(false);
         localStorage.removeItem(SESSION_KEY);
         setSession(null);
-        setLoginError(res.error || "utilizator sau parolă incorecte");
-        return;
+        setLoginError("Eroare la conectare: " + (e?.message || e));
       }
-      const user = res.user || normalizeUser(session.user) || session.user;
-      setApiSession({ user, pass: session.pass, mode: res.mode });
-      const { api, vehicles } = await initApi(res.mode);
-      if (cancelled) return;
-      setApi(api);
-      setVehicles(vehicles);
-      setLoginError(null);
     })();
     return () => { cancelled = true; };
   }, [session]);
@@ -127,6 +139,13 @@ export default function App() {
       try { const v = await api.create(demoVehicle()); replaceV(v); nav(`#/car/${v.id}`); setToast("🚗 Mașina demo a fost încărcată"); }
       catch (e) { fail(e); }
     },
+    async saveEmail(email) {
+      try {
+        const saved = await saveAccountEmail(email);
+        setAccountEmail(saved);
+        setToast(saved ? `📬 Reminderele ajung la ${saved}` : "E-mailul de remindere a fost șters");
+      } catch (e) { fail(e); }
+    },
   };
 
   const car = route.view === "car" ? vehicles.find((x) => x.id === route.id) : null;
@@ -137,7 +156,8 @@ export default function App() {
       {header(
         <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span className="mode">{api.mode === "cloud" ? "☁ sincronizat" : "💾 local"}</span>
-          <span className="userchip">👤 {displayUser}</span>
+          <button className="userchip" title="Profil și e-mail de remindere"
+            onClick={() => setModal({ kind: "account" })}>👤 {displayUser}{accountEmail ? "" : " · fără e-mail"}</button>
           <button className="btn ghost small" onClick={logout}>Ieși</button>
         </span>
       )}
@@ -147,7 +167,7 @@ export default function App() {
           ? <CarPage v={car} tab={route.tab} actions={actions} />
           : <Garage vehicles={vehicles} actions={actions} />}
       </main>
-      {modal && <ModalHost modal={modal} vehicles={vehicles} actions={actions} />}
+      {modal && <ModalHost modal={modal} vehicles={vehicles} actions={actions} accountEmail={accountEmail} user={displayUser} isCloud={api.mode === "cloud"} />}
       {toast && <div className="toast">{toast}</div>}
     </>
   );

@@ -439,11 +439,39 @@ function EventModal({ v, eid, actions }) {
   );
 }
 
+/* ================= profil (e-mail de remindere) ================= */
+
+function AccountModal({ user, email, isCloud, actions }) {
+  const [val, setVal] = useState(email || "");
+  const save = () => {
+    const e = val.trim().toLowerCase();
+    if (e && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) { actions.toast("⚠ adresă de e-mail invalidă"); return; }
+    actions.close();
+    actions.saveEmail(e || null);
+  };
+  return (
+    <ModalShell close={actions.close}>
+      <h2>👤 {user}</h2>
+      <div className="wiz-sub">Aici primești reminderele zilnice — doar pentru mașinile tale.</div>
+      <Field label="E-mail pentru remindere">
+        <input type="email" autoFocus placeholder="dan@exemplu.ro" value={val} onChange={(e) => setVal(e.target.value)} />
+      </Field>
+      {!isCloud && <div className="hint">⚠ Rulezi în modul local — e-mailurile se trimit doar după publicarea pe Netlify.</div>}
+      <div className="hint">Lași câmpul gol = fără e-mailuri; alertele rămân vizibile în aplicație.</div>
+      <div className="modal-actions">
+        <button className="btn ghost" onClick={actions.close}>Anulează</button>
+        <button className="btn" onClick={save}>Salvează</button>
+      </div>
+    </ModalShell>
+  );
+}
+
 /* ================= dispecer ================= */
 
-export default function ModalHost({ modal, vehicles, actions }) {
+export default function ModalHost({ modal, vehicles, actions, accountEmail, user, isCloud }) {
   const v = modal.vid ? vehicles.find((x) => x.id === modal.vid) : null;
   switch (modal.kind) {
+    case "account": return <AccountModal user={user} email={accountEmail} isCloud={isCloud} actions={actions} />;
     case "vehicle": return <VehicleModal v={v} actions={actions} />;
     case "fuel":    return v && <FuelWizard v={v} actions={actions} />;
     case "work":    return v && <WorkWizard v={v} actions={actions} />;

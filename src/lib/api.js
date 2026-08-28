@@ -19,7 +19,7 @@ const uid = () => crypto.randomUUID();
 const now = () => new Date().toISOString();
 const today = () => now().slice(0, 10);
 
-/* ---------- login ---------- */
+/* ---------- login / creare cont ---------- */
 export async function cloudLogin(user, pass) {
   const nu = normalizeUser(user);
   if (!nu) return { mode: "denied", error: "nume de utilizator invalid (minim 2 caractere: litere, cifre, . _ -)" };
@@ -29,11 +29,29 @@ export async function cloudLogin(user, pass) {
     const ct = r.headers.get("content-type") || "";
     if (!ct.includes("application/json")) return { mode: "local", user: nu }; // nu există backend → mod local
     const j = await r.json().catch(() => null);
-    if (r.ok && j?.ok) return { mode: "cloud", user: j.user };
+    if (r.ok && j?.ok) return { mode: "cloud", user: j.user, email: j.email ?? null, created: !!j.created };
     return { mode: "denied", error: j?.error || "utilizator sau parolă incorecte" };
   } catch {
     return { mode: "local", user: nu };
   }
+}
+
+/* ---------- profil: e-mailul de remindere ---------- */
+const emailKey = () => `fleetdeck-email:${SESSION.user || "anon"}`;
+export async function getAccountEmail() {
+  if (SESSION.mode === "cloud") {
+    try { const j = await req("GET", "/api/account"); return j.email ?? null; } catch { return null; }
+  }
+  return localStorage.getItem(emailKey()) || null;
+}
+export async function saveAccountEmail(email) {
+  if (SESSION.mode === "cloud") {
+    const j = await req("PATCH", "/api/account", { email: email || null });
+    return j.email ?? null;
+  }
+  if (email) localStorage.setItem(emailKey(), email);
+  else localStorage.removeItem(emailKey());
+  return email || null;
 }
 
 /* ---------- backend local (per utilizator) ---------- */

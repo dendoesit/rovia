@@ -164,7 +164,8 @@ main{padding:22px 18px 110px}
 .login-card{max-width:360px;margin:8vh auto 0;background:var(--card);border:1px solid var(--border);border-radius:20px;padding:30px;box-shadow:var(--shadow);text-align:center}
 .login-card form{text-align:left;margin-top:14px}
 .login-err{color:var(--red);font-size:13px;font-weight:600;margin-top:4px}
-.userchip{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:var(--muted);background:var(--card);border:1px solid var(--border);padding:4px 10px;border-radius:20px;white-space:nowrap}
+.userchip{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:var(--muted);background:var(--card);border:1px solid var(--border);padding:4px 10px;border-radius:20px;white-space:nowrap;cursor:pointer}
+.userchip:hover{border-color:var(--accent);color:var(--accent)}
 /* toast */
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#0f172a;color:#fff;padding:11px 20px;border-radius:12px;font-size:14px;font-weight:600;z-index:30;white-space:nowrap;animation:toastin .25s ease}
 @keyframes toastin{from{opacity:0;transform:translateX(-50%) translateY(16px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
