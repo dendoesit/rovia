@@ -6,6 +6,7 @@ import AlertStrip from "./components/AlertStrip";
 import Garage from "./components/Garage";
 import CarPage from "./components/CarPage";
 import Login from "./components/Login";
+import FleetCosts from "./components/FleetCosts";
 import ModalHost from "./components/modals";
 
 const SESSION_KEY = "fleetdeck-session";
@@ -155,7 +156,6 @@ export default function App() {
     <>
       {header(
         <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span className="mode">{api.mode === "cloud" ? "☁ sincronizat" : "💾 local"}</span>
           <button className="userchip" title="Profil și e-mail de remindere"
             onClick={() => setModal({ kind: "account" })}>👤 {displayUser}{accountEmail ? "" : " · fără e-mail"}</button>
           <button className="btn ghost small" onClick={logout}>Ieși</button>
@@ -165,7 +165,9 @@ export default function App() {
         <AlertStrip vehicles={car ? [car] : vehicles} />
         {car
           ? <CarPage v={car} tab={route.tab} actions={actions} />
-          : <Garage vehicles={vehicles} actions={actions} />}
+          : route.view === "costs"
+            ? <FleetCosts vehicles={vehicles} />
+            : <Garage vehicles={vehicles} actions={actions} />}
       </main>
       {modal && <ModalHost modal={modal} vehicles={vehicles} actions={actions} accountEmail={accountEmail} user={displayUser} isCloud={api.mode === "cloud"} />}
       {toast && <div className="toast">{toast}</div>}

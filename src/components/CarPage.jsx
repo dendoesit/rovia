@@ -1,5 +1,5 @@
 import {
-  DOC_TYPES, CORE_DOCS, ATT, latestDocs, healthItems, costStats,
+  DOC_TYPES, CORE_DOCS, ATT, latestDocs, healthItems, costStats, fuelEstimate,
   eventTitle, eventIcon, daysLeft, dayStatus, worst,
   fmtKm, fmtMoney, fmtDate, dateLabel, relTime, zile,
 } from "../lib/model";
@@ -33,9 +33,7 @@ export default function CarPage({ v, tab, actions }) {
       </div>
 
       <div className="quick">
-        <button className="qbtn" onClick={() => open({ kind: "fuel", vid: v.id })}><span className="ico">⛽</span>Alimentare</button>
         <button className="qbtn" onClick={() => open({ kind: "work", vid: v.id })}><span className="ico">🔧</span>Lucrare</button>
-        <button className="qbtn" onClick={() => open({ kind: "expense", vid: v.id })}><span className="ico">💶</span>Cheltuială</button>
         <button className="qbtn" onClick={() => open({ kind: "doc", vid: v.id })}><span className="ico">📄</span>Document</button>
       </div>
 
@@ -83,7 +81,8 @@ function Health({ v, actions }) {
 
 /* ---------- Costuri ---------- */
 function Costs({ v }) {
-  const { year, total, cats, perKm, cons, lastService } = costStats(v);
+  const { year, total, cats, perKm, lastService } = costStats(v);
+  const fe = fuelEstimate(v);
   const catDefs = [["fuel", "Combustibil", "c-fuel"], ["maintenance", "Mentenanță", "c-maint"], ["document", "Documente", "c-docs"], ["expense", "Altele", "c-other"]];
   const NOD = <span className="nodata">Încă nu sunt destule date</span>;
   return (
@@ -111,9 +110,11 @@ function Costs({ v }) {
           <div className="sub">{perKm ? "pe baza km înregistrați" : "necesită intrări cu kilometraj"}</div>
         </div>
         <div className="stat" style={{ cursor: "default" }}>
-          <div className="lbl"><span>⛽</span>Consum</div>
-          <div className="val">{cons ? cons.toFixed(1) + " L/100km" : NOD}</div>
-          <div className="sub">{cons ? "din alimentările tale" : "necesită 2+ alimentări cu km și litri"}</div>
+          <div className="lbl"><span>⛽</span>Combustibil (estimat)</div>
+          <div className="val">{fe ? `~${fmtMoney(Math.round(fe.costMonth))}/lună` : NOD}</div>
+          <div className="sub">{fe
+            ? `~${fmtKm(fe.kmAn)} km/an · ${fe.cons.toFixed(1)} ${fe.unit}/100km${fe.real ? "" : ` (medie ${v.fuel})`} · ~${fmtMoney(Math.round(fe.costYear))}/an`
+            : "necesită kilometraj + anul mașinii"}</div>
         </div>
         <div className="stat" style={{ cursor: "default" }}>
           <div className="lbl"><span>🔧</span>Ultimul service</div>

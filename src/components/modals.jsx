@@ -3,7 +3,9 @@ import {
   DOC_TYPES, MAINT_TYPES, FUELS,
   todayStr, fmtKm, fmtMoney, fmtDate, daysLeft, zile,
   eventTitle, eventIcon,
+  serviceIntervalFor, itpMonthsFor, addMonths, addDays,
 } from "../lib/model";
+import { scanDocument } from "../lib/api";
 
 /* ================= infrastructură ================= */
 
@@ -95,44 +97,73 @@ const photoStep = () => ({
 
 const num = (x) => (x === "" || x == null ? null : +x);
 
-/* ================= fluxuri ================= */
-
-function FuelWizard({ v, actions }) {
+/* chips rapide de expirare, în funcție de tipul documentului și de mașină */
+function ExpiryChips({ type, v, patch }) {
+  const chips = [];
+  if (type === "itp") {
+    const rec = itpMonthsFor(v);
+    chips.push([`+${rec.label} ✓`, () => patch({ expires: addMonths(rec.months) })]);
+    if (rec.months !== 12) chips.push(["+1 an", () => patch({ expires: addMonths(12) })]);
+    if (rec.months !== 24) chips.push(["+2 ani", () => patch({ expires: addMonths(24) })]);
+  } else if (type === "rovinieta") {
+    chips.push(["+30 zile", () => patch({ expires: addDays(30) })]);
+    chips.push(["+60 zile", () => patch({ expires: addDays(60) })]);
+    chips.push(["+12 luni", () => patch({ expires: addMonths(12) })]);
+  } else if (type === "rca" || type === "casco") {
+    chips.push(["+6 luni", () => patch({ expires: addMonths(6) })]);
+    chips.push(["+12 luni", () => patch({ expires: addMonths(12) })]);
+  } else {
+    chips.push(["+12 luni", () => patch({ expires: addMonths(12) })]);
+    chips.push(["+24 luni", () => patch({ expires: addMonths(24) })]);
+  }
   return (
-    <Wizard
-      toast={actions.toast} close={actions.close}
-      steps={[{
-        title: "Alimentare",
-        sub: "Doar suma e obligatorie — restul e opțional.",
-        validate: (d) => (!num(d.cost) ? "Introdu suma" : null),
-        render: (d, patch) => (
-          <>
-            <div className="row2">
-              <Field label="Sumă (€)"><input type="number" inputMode="decimal" min="0" placeholder="82" autoFocus
-                value={d.cost ?? ""} onChange={(e) => patch({ cost: e.target.value })} /></Field>
-              <Field label="Litri (opțional)"><input type="number" inputMode="decimal" min="0" placeholder="52"
-                value={d.liters ?? ""} onChange={(e) => patch({ liters: e.target.value })} /></Field>
-            </div>
-            <div className="row2">
-              <Field label="Kilometraj (opțional)"><input type="number" inputMode="numeric" min="0" placeholder={v.km || ""}
-                value={d.km ?? ""} onChange={(e) => patch({ km: e.target.value })} /></Field>
-              <Field label="Data"><input type="date" value={d.date ?? todayStr()} onChange={(e) => patch({ date: e.target.value })} /></Field>
-            </div>
-          </>
-        ),
-      }]}
-      onDone={(d) =>
-        actions.addEvent(v.id, {
-          event: { kind: "fuel", cost: num(d.cost), liters: num(d.liters), km: num(d.km), date: d.date || todayStr() },
-        }, "⛽ Alimentare salvată")}
-    />
+    <div className="chips">
+      {chips.map(([label, fn]) => <button key={label} className="chip" onClick={fn}>{label}</button>)}
+    </div>
   );
 }
 
+/* buton de scanare AI: poză → /api/scan → câmpuri precompletate */
+function ScanButton({ patch, toast, onScanned }) {
+  const [state, setState] = useState(null); // null | "scanning" | "done"
+  const onFile = async (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    const photo = await readPhoto(f);
+    setState("scanning");
+    try {
+      const r = await scanDocument(photo);
+      const found = [];
+      const p = { photo };
+      if (r.type && DOC_TYPES[r.type]) { p.type = r.type; found.push(DOC_TYPES[r.type].label); }
+      if (r.expires) { p.expires = r.expires; found.push("expiră " + fmtDate(r.expires)); }
+      if (r.provider) { p.provider = r.provider; found.push(r.provider); }
+      if (r.cost) { p.cost = String(r.cost); found.push(fmtMoney(r.cost)); }
+      patch(p);
+      setState("done");
+      if (found.length) { toast("🤖 Am citit: " + found.join(" · ") + " — verifică și salvează"); onScanned && onScanned(p); }
+      else toast("🤖 N-am putut citi datele — completează manual (poza rămâne atașată)");
+    } catch (err) {
+      setState(null);
+      toast("⚠ " + (err?.message || "scanarea a eșuat"));
+    }
+  };
+  return (
+    <label className="file-btn" style={{ width: "100%", justifyContent: "center" }}>
+      {state === "scanning" ? "🤖 Citesc documentul…" : state === "done" ? "🤖 Citit ✓ — mai scanează unul?" : "📷 Scanează documentul cu AI"}
+      <input type="file" accept="image/*" onChange={onFile} />
+    </label>
+  );
+}
+
+/* ================= fluxuri ================= */
+
 function WorkWizard({ v, actions }) {
+  const rec = serviceIntervalFor(v);
   return (
     <Wizard
       toast={actions.toast} close={actions.close}
+      initial={{ kmInterval: String(rec.km), months: String(rec.months) }}
       steps={[
         {
           title: "Ce s-a făcut?", noButtons: true,
@@ -154,30 +185,32 @@ function WorkWizard({ v, actions }) {
             d.type === "service" ? (
               <>
                 <div className="chips">
+                  <button className="chip" onClick={() => patch({ kmInterval: String(rec.km), months: String(rec.months) })}>
+                    ✓ {fmtKm(rec.km)} km / {rec.months} luni (recomandat)
+                  </button>
                   <button className="chip" onClick={() => patch({ kmInterval: "10000" })}>10.000 km</button>
                   <button className="chip" onClick={() => patch({ kmInterval: "15000" })}>15.000 km</button>
-                  <button className="chip" onClick={() => patch({ months: "12" })}>12 luni</button>
                 </div>
                 <div className="row2">
-                  <Field label="Peste câți km"><input type="number" inputMode="numeric" value={d.kmInterval ?? "10000"}
+                  <Field label="Peste câți km"><input type="number" inputMode="numeric" value={d.kmInterval ?? ""}
                     onChange={(e) => patch({ kmInterval: e.target.value })} /></Field>
-                  <Field label="Sau luni"><input type="number" inputMode="numeric" value={d.months ?? "12"}
+                  <Field label="Sau luni"><input type="number" inputMode="numeric" value={d.months ?? ""}
                     onChange={(e) => patch({ months: e.target.value })} /></Field>
                 </div>
+                <Field label="Cât a costat? (€)"><input type="number" inputMode="decimal" min="0" placeholder="420"
+                  value={d.cost ?? ""} onChange={(e) => patch({ cost: e.target.value })} /></Field>
+                <div className="hint">Recomandarea ține cont de vârsta mașinii ({v.year || "an necunoscut"}) și de combustibil ({v.fuel || "—"}).</div>
               </>
             ) : (
-              <Field label="Notă (opțional)">
-                <input placeholder={d.type === "tyres" ? "ex: perechea din față, Michelin" : "ce s-a făcut?"}
-                  value={d.note ?? ""} onChange={(e) => patch({ note: e.target.value })} autoFocus />
-              </Field>
+              <>
+                <Field label="Cât a costat? (€)"><input type="number" inputMode="decimal" min="0" placeholder="250" autoFocus
+                  value={d.cost ?? ""} onChange={(e) => patch({ cost: e.target.value })} /></Field>
+                <Field label="Notă (opțional)">
+                  <input placeholder={d.type === "tyres" ? "ex: perechea din față, Michelin" : "ce s-a făcut?"}
+                    value={d.note ?? ""} onChange={(e) => patch({ note: e.target.value })} />
+                </Field>
+              </>
             ),
-        },
-        {
-          title: "Cât a costat?", skippable: true,
-          render: (d, patch) => (
-            <Field label="Cost (€)"><input type="number" inputMode="decimal" min="0" placeholder="420" autoFocus
-              value={d.cost ?? ""} onChange={(e) => patch({ cost: e.target.value })} /></Field>
-          ),
         },
         photoStep(),
       ]}
@@ -199,61 +232,39 @@ function WorkWizard({ v, actions }) {
   );
 }
 
-function ExpenseWizard({ v, actions }) {
-  return (
-    <Wizard
-      toast={actions.toast} close={actions.close}
-      steps={[{
-        title: "Cheltuială",
-        sub: "Pentru orice altceva în afara lucrărilor majore.",
-        validate: (d) => (!d.label?.trim() ? "Scrie ce a fost" : !num(d.cost) ? "Introdu costul" : null),
-        render: (d, patch) => (
-          <>
-            <Field label="Ce a fost?"><input placeholder="Parcare, spălătorie, ștergătoare…" autoFocus
-              value={d.label ?? ""} onChange={(e) => patch({ label: e.target.value })} /></Field>
-            <div className="row2">
-              <Field label="Cost (€)"><input type="number" inputMode="decimal" min="0"
-                value={d.cost ?? ""} onChange={(e) => patch({ cost: e.target.value })} /></Field>
-              <Field label="Data"><input type="date" value={d.date ?? todayStr()} onChange={(e) => patch({ date: e.target.value })} /></Field>
-            </div>
-          </>
-        ),
-      }]}
-      onDone={(d) =>
-        actions.addEvent(v.id, {
-          event: { kind: "expense", label: d.label.trim(), cost: num(d.cost), date: d.date || todayStr() },
-        }, "💶 Cheltuială salvată")}
-    />
-  );
-}
-
 function DocWizard({ v, actions, preType }) {
   const detailStep = {
-    title: (d) => `${DOC_TYPES[d.type]?.icon} ${DOC_TYPES[d.type]?.label}`,
-    sub: "📷 Scanarea documentelor vine mai târziu — deocamdată doar esențialul.",
-    validate: (d) => (!d.expires ? "Alege data de expirare" : null),
+    title: (d) => (DOC_TYPES[d.type] ? `${DOC_TYPES[d.type].icon} ${DOC_TYPES[d.type].label}` : "Document"),
+    validate: (d) => (!DOC_TYPES[d.type] ? "Alege tipul documentului" : !d.expires ? "Alege data de expirare" : null),
     render: (d, patch) => (
       <>
-        <Field label="Expiră la"><input type="date" autoFocus value={d.expires ?? ""} onChange={(e) => patch({ expires: e.target.value })} /></Field>
+        <ScanButton patch={patch} toast={actions.toast} />
+        <Field label="Expiră la"><input type="date" value={d.expires ?? ""} onChange={(e) => patch({ expires: e.target.value })} /></Field>
+        <ExpiryChips type={d.type} v={v} patch={patch} />
         <div className="row2">
           <Field label="Furnizor (opțional)"><input placeholder="Allianz, Groupama…"
             value={d.provider ?? ""} onChange={(e) => patch({ provider: e.target.value })} /></Field>
           <Field label="Cost (opțional)"><input type="number" inputMode="decimal" min="0"
             value={d.cost ?? ""} onChange={(e) => patch({ cost: e.target.value })} /></Field>
         </div>
+        {d.photo && <div className="muted">📎 Poza documentului rămâne atașată în istoric.</div>}
       </>
     ),
   };
   const typeStep = {
     title: "Ce document?", noButtons: true,
     render: (d, patch, skipNext) => (
-      <div className="chips col">
-        {Object.entries(DOC_TYPES).map(([k, m]) => (
-          <button key={k} className="chip big" onClick={() => { patch({ type: k }); skipNext(); }}>
-            {m.icon}&nbsp; {m.label}
-          </button>
-        ))}
-      </div>
+      <>
+        <ScanButton patch={patch} toast={actions.toast} onScanned={(p) => { if (p.type) skipNext(); }} />
+        <div className="wiz-sub" style={{ margin: "10px 0 0", textAlign: "center" }}>sau alege manual:</div>
+        <div className="chips col">
+          {Object.entries(DOC_TYPES).map(([k, m]) => (
+            <button key={k} className="chip big" onClick={() => { patch({ type: k }); skipNext(); }}>
+              {m.icon}&nbsp; {m.label}
+            </button>
+          ))}
+        </div>
+      </>
     ),
   };
   return (
@@ -263,7 +274,7 @@ function DocWizard({ v, actions, preType }) {
       steps={preType ? [detailStep] : [typeStep, detailStep]}
       onDone={(d) =>
         actions.putDocument(v.id, d.type,
-          { expires: d.expires, provider: d.provider?.trim() || null, cost: num(d.cost) },
+          { expires: d.expires, provider: d.provider?.trim() || null, cost: num(d.cost), photo: d.photo || null },
           `${DOC_TYPES[d.type].icon} ${DOC_TYPES[d.type].label} salvat — expiră ${fmtDate(d.expires)}`)}
     />
   );
@@ -283,6 +294,7 @@ function RenewWizard({ v, actions, type }) {
         render: (d, patch) => (
           <>
             <Field label="Noua dată de expirare"><input type="date" autoFocus value={d.expires ?? ""} onChange={(e) => patch({ expires: e.target.value })} /></Field>
+            <ExpiryChips type={type} v={v} patch={patch} />
             <div className="row2">
               <Field label="Furnizor (opțional)"><input value={d.provider ?? d0?.provider ?? ""} onChange={(e) => patch({ provider: e.target.value })} /></Field>
               <Field label="Cost (opțional)"><input type="number" inputMode="decimal" min="0"
@@ -473,9 +485,7 @@ export default function ModalHost({ modal, vehicles, actions, accountEmail, user
   switch (modal.kind) {
     case "account": return <AccountModal user={user} email={accountEmail} isCloud={isCloud} actions={actions} />;
     case "vehicle": return <VehicleModal v={v} actions={actions} />;
-    case "fuel":    return v && <FuelWizard v={v} actions={actions} />;
     case "work":    return v && <WorkWizard v={v} actions={actions} />;
-    case "expense": return v && <ExpenseWizard v={v} actions={actions} />;
     case "doc":     return v && <DocWizard v={v} actions={actions} preType={modal.preType} />;
     case "renew":   return v && <RenewWizard v={v} actions={actions} type={modal.type} />;
     case "km":      return v && <KmWizard v={v} actions={actions} />;

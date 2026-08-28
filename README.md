@@ -14,7 +14,11 @@ Interfața este integral în română. Frontend: **React + Vite**. Backend: **AP
 - **Documente** — RCA, ITP, rovinietă, CASCO, garanție, leasing, cu „Reînnoiește →”; fiecare reînnoire intră automat în istoric.
 - **Istoric** — cronologia mașinii se construiește singură din tot ce înregistrezi.
 - **Costuri** — cât ai cheltuit anul acesta, defalcat pe categorii, plus €/km. Fără date suficiente afișează cinstit „Încă nu sunt destule date”.
-- **Utilizatori** — login simplu cu nume + parola comună a echipei; fiecare utilizator își vede doar mașinile lui.
+- **Utilizatori** — cont individual (nume + parola ta), creat automat la primul login; fiecare utilizator își vede doar mașinile lui.
+- **Inteligență auto** — intervalele de service se recomandă automat după vârsta mașinii și combustibil; termenele ITP respectă legea RO (prima la 3 ani la mașină nouă, apoi la 2 ani, anual peste 12 ani vechime); costul de combustibil se estimează singur din km/an (fără să loghezi alimentări).
+- **Scanare documente cu AI** — fotografiezi documentul (RCA, ITP, rovinietă…), AI-ul citește tipul, data de expirare, furnizorul și costul, iar poza rămâne atașată în istoric. Necesită `OPENAI_API_KEY`.
+- **📊 Costuri flotă** — bar chart cu toate mașinile firmei, costuri pe categorii + combustibil estimat pe fiecare mașină, ca să le compari dintr-o privire.
+- **Chips rapide la documente** — rovinietă: +30/+60 zile/+12 luni; RCA & CASCO: +6/+12 luni; ITP: termenul legal precompletat pentru mașina ta.
 
 ## Pornire rapidă (local)
 
@@ -54,6 +58,10 @@ După primul deploy, în Netlify → *Site configuration → Environment variabl
 |---|---|
 | `RESEND_API_KEY` | pentru e-mailurile zilnice ([resend.com](https://resend.com), gratuit) — fără ea aplicația merge, doar nu trimite mailuri |
 | `REMINDER_FROM` | opțional, expeditorul (implicit `FleetDeck <onboarding@resend.dev>`) |
+| `GEMINI_API_KEY` | scanarea documentelor cu AI, varianta **gratuită** ([aistudio.google.com](https://aistudio.google.com), fără card, 1.500 cereri/zi) |
+| `GEMINI_MODEL` | opțional (implicit `gemini-2.5-flash`) |
+| `OPENAI_API_KEY` | alternativă cu plată pentru scanare — folosită doar dacă lipsește cheia Gemini |
+| `OPENAI_MODEL` | opțional (implicit `gpt-4o-mini`) |
 
 Atât. **Nu există parolă globală** — fiecare utilizator își creează contul cu parola lui la primul login, iar destinatarul reminderelor e e-mailul pe care fiecare și-l setează singur din profil (👤).
 

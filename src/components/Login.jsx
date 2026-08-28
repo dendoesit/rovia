@@ -29,8 +29,6 @@ export default function Login({ onLogin, error, busy }) {
             {busy ? "Se verifică…" : "Intră"}
           </button>
         </form>
-        <div className="hint">Nume nou? Contul se creează automat cu parola pe care o introduci acum (minim 4 caractere) — ține-o minte. Fiecare utilizator își vede doar mașinile lui.</div>
-        <div className="hint" style={{ opacity: 0.6 }}>v3 · conturi individuale</div>
       </div>
     </main>
   );

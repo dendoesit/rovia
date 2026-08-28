@@ -158,6 +158,65 @@ export default async (req) => {
       return err("metodă nepermisă", 405);
     }
 
+    /* /api/scan — citește un document auto cu AI.
+       Preferă Gemini (GEMINI_API_KEY — GRATUIT, fără card: https://aistudio.google.com),
+       altfel folosește OpenAI (OPENAI_API_KEY). */
+    if (p[0] === "scan") {
+      if (m !== "POST") return err("metodă nepermisă", 405);
+      const gKey = process.env.GEMINI_API_KEY;
+      const oKey = process.env.OPENAI_API_KEY;
+      if (!gKey && !oKey) return err("scanarea AI nu e configurată — setează GEMINI_API_KEY (gratuit, aistudio.google.com) sau OPENAI_API_KEY în Netlify", 501);
+      const b = await req.json();
+      const img = typeof b?.image === "string" ? b.image.match(/^data:(image\/[a-z+]+);base64,(.+)$/) : null;
+      if (!img) return err("trimite imaginea ca data URL");
+      const prompt =
+        'Ești un extractor de date din documente auto românești (RCA, poliță CASCO, certificat ITP, rovinietă, garanție, contract leasing). ' +
+        'Răspunde DOAR cu un obiect JSON, fără alt text: {"type": una dintre valorile "itp","rca","rovinieta","casco","warranty","leasing" sau null, ' +
+        '"expires": data de EXPIRARE / sfârșitul valabilității în format "YYYY-MM-DD" sau null, ' +
+        '"provider": numele asigurătorului/emitentului sau null, "cost": prețul plătit ca număr sau null, ' +
+        '"plate": numărul de înmatriculare sau null}. Dacă documentul nu e clar, pune null la câmpurile nesigure.';
+
+      let raw = "{}";
+      if (gKey) {
+        const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+        const ai = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${gKey}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: img[1], data: img[2] } }] }],
+            generationConfig: { response_mime_type: "application/json", maxOutputTokens: 300 },
+          }),
+        });
+        if (!ai.ok) return err("Gemini a răspuns cu eroare (" + ai.status + ")", 502);
+        const data = await ai.json();
+        raw = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+      } else {
+        const ai = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${oKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+            response_format: { type: "json_object" },
+            max_tokens: 300,
+            messages: [{ role: "user", content: [{ type: "text", text: prompt }, { type: "image_url", image_url: { url: b.image } }] }],
+          }),
+        });
+        if (!ai.ok) return err("serviciul AI a răspuns cu eroare (" + ai.status + ")", 502);
+        const data = await ai.json();
+        raw = data.choices?.[0]?.message?.content || "{}";
+      }
+
+      let out = {};
+      try { out = JSON.parse(raw); } catch { /* răspuns ne-JSON */ }
+      return json({
+        type: DOC_LABELS[out.type] ? out.type : null,
+        expires: typeof out.expires === "string" && DATE_RE.test(out.expires) ? out.expires : null,
+        provider: out.provider ? String(out.provider) : null,
+        cost: out.cost != null && !isNaN(+out.cost) ? +out.cost : null,
+        plate: out.plate ? String(out.plate) : null,
+      });
+    }
+
     if (p[0] !== "vehicles") return err("rută necunoscută", 404);
 
     /* /api/vehicles */
@@ -229,6 +288,7 @@ export default async (req) => {
           title: `${DOC_LABELS[type]} ${existed ? "reînnoit" : "adăugat"}`,
           cost: b.cost != null && !isNaN(+b.cost) ? +b.cost : null,
           note: b.provider || null,
+          photo: b.photo || null,
         },
       });
       await saveV(store, user, v);

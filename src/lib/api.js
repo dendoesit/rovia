@@ -102,7 +102,7 @@ const localApi = {
     if (!v) throw new Error("mașina nu există");
     v.events = (v.events || []).filter((e) => e.id !== eid); lsWrite(all); return v;
   },
-  async putDocument(id, type, { expires, provider, cost }) {
+  async putDocument(id, type, { expires, provider, cost, photo }) {
     const all = lsRead(); const v = all.find((x) => x.id === id);
     if (!v) throw new Error("mașina nu există");
     v.documents = v.documents || [];
@@ -110,7 +110,7 @@ const localApi = {
     const existed = !!d;
     if (d) { d.expires = expires; if (provider) d.provider = provider; }
     else v.documents.push({ id: uid(), type, expires, provider: provider || null });
-    applyEventLocal(v, { event: { kind: "document", type, title: `${DOC_LABELS[type] || type} ${existed ? "reînnoit" : "adăugat"}`, cost: cost || null, note: provider || null } });
+    applyEventLocal(v, { event: { kind: "document", type, title: `${DOC_LABELS[type] || type} ${existed ? "reînnoit" : "adăugat"}`, cost: cost || null, note: provider || null, photo: photo || null } });
     lsWrite(all); return v;
   },
 };
@@ -140,6 +140,12 @@ const remoteApi = {
   deleteEvent: (id, eid) => req("DELETE", `/api/vehicles/${id}/events/${eid}`),
   putDocument: (id, type, p) => req("PUT", `/api/vehicles/${id}/documents/${type}`, p),
 };
+
+/* ---------- scanare document cu AI (doar pe versiunea publicată) ---------- */
+export async function scanDocument(image) {
+  if (SESSION.mode !== "cloud") throw new Error("scanarea AI funcționează doar pe versiunea publicată pe Netlify");
+  return req("POST", "/api/scan", { image });
+}
 
 /* ---------- inițializare după login ---------- */
 export async function initApi(mode) {

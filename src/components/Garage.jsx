@@ -17,7 +17,10 @@ export default function Garage({ vehicles, actions }) {
 
   return (
     <>
-      <div className="page-title">Garaj</div>
+      <div className="section-head" style={{ marginBottom: 16 }}>
+        <div className="page-title" style={{ marginBottom: 0 }}>Garaj</div>
+        <button className="btn ghost small" onClick={() => nav("#/costs")}>📊 Costuri flotă</button>
+      </div>
       <div className="garage">
         {vehicles.map((v) => {
           const att = attentionItems(v);

@@ -90,7 +90,8 @@ export function healthItems(v) {
   const kmLeft = v.nextServiceKm && v.km ? v.nextServiceKm - v.km : null;
   const dLeft = v.nextServiceDate ? daysLeft(v.nextServiceDate) : null;
   const sStat = kmLeft == null && dLeft == null ? "none" : worst(kmStatus(kmLeft), dLeft == null ? "none" : dayStatus(dLeft));
-  let sVal = "Nesetat", sSub = "Apasă pentru a seta";
+  const rec = serviceIntervalFor(v);
+  let sVal = "Nesetat", sSub = `Recomandat: ${fmtKm(rec.km)} km / ${rec.months} luni`;
   if (kmLeft != null) {
     sVal = kmLeft <= 0 ? "Depășit" : `~${fmtKm(kmLeft)} km`;
     sSub = `la ${fmtKm(v.nextServiceKm)} km`;
@@ -200,6 +201,74 @@ export function costStats(v) {
     [...(v.events || [])].filter((e) => e.kind === "maintenance" && e.type === "service" && e.cost)
       .sort((a, b) => b.date.localeCompare(a.date))[0] || null;
   return { year, total, cats, perKm, cons, lastService };
+}
+
+/* ---------- cunoștințe auto: intervale de service (după vârstă & combustibil) ---------- */
+export function vehicleAge(v) {
+  const y = +v.year;
+  return y ? Math.max(0, new Date().getFullYear() - y) : null;
+}
+export function serviceIntervalFor(v) {
+  const age = vehicleAge(v);
+  const f = v.fuel || "";
+  if (f === "Electric") return age != null && age > 8 ? { km: 20000, months: 12 } : { km: 30000, months: 24 };
+  if (f === "GPL") return { km: 10000, months: 12 };
+  if (f === "Hibrid" || f === "Hibrid plug-in") return age != null && age >= 10 ? { km: 10000, months: 12 } : { km: 15000, months: 12 };
+  // Benzină / Motorină
+  if (age == null) return { km: 15000, months: 12 };
+  if (age > 12) return { km: 10000, months: 12 };
+  if (age >= 5) return { km: 12000, months: 12 };
+  return { km: 15000, months: 12 };
+}
+
+/* ITP conform legislației RO: prima la 3 ani (mașină nouă), apoi la 2 ani,
+   iar la mașinile de peste 12 ani — anual */
+export function itpMonthsFor(v) {
+  const age = vehicleAge(v);
+  if (age == null) return { months: 24, label: "2 ani" };
+  if (age >= 12) return { months: 12, label: "1 an (mașină de peste 12 ani)" };
+  if (age <= 1) return { months: 36, label: "3 ani (prima ITP, mașină nouă)" };
+  return { months: 24, label: "2 ani" };
+}
+
+export function addMonths(n) { const d = new Date(); d.setMonth(d.getMonth() + n); return d.toISOString().slice(0, 10); }
+export function addDays(n) { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }
+
+/* ---------- combustibil: cost estimat automat (orientativ) ----------
+   Constante ajustabile: preț €/L (€/kWh la electric) și consum mediu L/100km */
+export const FUEL_PRICE = { "Benzină": 1.50, "Motorină": 1.55, "GPL": 0.78, "Hibrid": 1.50, "Hibrid plug-in": 1.50, "Electric": 0.22 };
+export const FUEL_CONS = { "Benzină": 7.5, "Motorină": 6.5, "GPL": 9.5, "Hibrid": 5.0, "Hibrid plug-in": 6.0, "Electric": 17 };
+
+export function kmPerYear(v) {
+  // 1) din intrările cu kilometraj (cel mai precis)
+  const kmE = (v.events || []).filter((e) => e.km && e.date).sort((a, b) => a.date.localeCompare(b.date));
+  if (kmE.length >= 2) {
+    const spanKm = kmE[kmE.length - 1].km - kmE[0].km;
+    const months = (new Date(kmE[kmE.length - 1].date) - new Date(kmE[0].date)) / (30.44 * 864e5);
+    if (spanKm >= 300 && months >= 1) return Math.round((spanKm / months) * 12);
+  }
+  // 2) km totali împărțiți la lunile de când există mașina
+  if (v.km && +v.year) {
+    const months = Math.max(6, (Date.now() - new Date(+v.year, 0, 1)) / (30.44 * 864e5));
+    return Math.round((v.km / months) * 12);
+  }
+  return null;
+}
+export function fuelEstimate(v) {
+  const kmAn = kmPerYear(v);
+  if (!kmAn) return null;
+  // consum real dacă există alimentări cu km + litri, altfel media pe tipul de combustibil
+  const fl = (v.events || []).filter((e) => e.kind === "fuel" && e.km && e.liters).sort((a, b) => a.km - b.km);
+  let cons = null, real = false;
+  if (fl.length >= 2) {
+    const dist = fl[fl.length - 1].km - fl[0].km;
+    const L = fl.slice(1).reduce((s, e) => s + +e.liters, 0);
+    if (dist >= 100) { cons = (L / dist) * 100; real = true; }
+  }
+  if (!cons) cons = FUEL_CONS[v.fuel] ?? 7.0;
+  const price = FUEL_PRICE[v.fuel] ?? 1.5;
+  const costYear = (kmAn * cons) / 100 * price;
+  return { kmAn, cons, real, costYear, costMonth: costYear / 12, unit: v.fuel === "Electric" ? "kWh" : "L" };
 }
 
 /* ---------- mașină demo ---------- */
