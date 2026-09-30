@@ -1,159 +1,93 @@
-/* Stratul de date: API REST pe Netlify Functions + fallback localStorage.
-   Sesiune simplă: utilizator + parola comună a echipei (Basic auth).
-   În modul local (fără backend), orice parolă e acceptată, iar fiecare
-   utilizator are propriul spațiu în localStorage. */
+/* Stratul de date: API REST pe Netlify Functions. Sesiunea stă într-un cookie HttpOnly,
+   deci parola nu mai este păstrată în browser și nu se mai trimite la fiecare cerere. */
 
-const SESSION = { user: null, pass: null, mode: "local" };
-
-export function setApiSession({ user, pass, mode }) {
-  SESSION.user = user; SESSION.pass = pass; SESSION.mode = mode;
+export class ApiError extends Error {
+  constructor(status, message, code = null) { super(message); this.status = status; this.code = code; }
 }
-export function normalizeUser(u) {
-  u = String(u || "").trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9ăâîșț._-]/g, "");
-  return u.length >= 2 && u.length <= 40 ? u : null;
-}
-const b64 = (s) => btoa(String.fromCharCode(...new TextEncoder().encode(s)));
-const authHeader = () => (SESSION.user ? { Authorization: "Basic " + b64(`${SESSION.user}:${SESSION.pass}`) } : {});
 
-const uid = () => crypto.randomUUID();
-const now = () => new Date().toISOString();
-const today = () => now().slice(0, 10);
+let onUnauthorized = () => {};
+export const setUnauthorizedHandler = (fn) => { onUnauthorized = fn; };
 
-/* ---------- login / creare cont ---------- */
-export async function cloudLogin(user, pass) {
-  const nu = normalizeUser(user);
-  if (!nu) return { mode: "denied", error: "nume de utilizator invalid (minim 2 caractere: litere, cifre, . _ -)" };
-  if (!pass) return { mode: "denied", error: "introdu parola" };
+/* doar sesiunea expirată scoate din cont; un 401 obișnuit (ex. parolă greșită) rămâne o eroare de formular */
+export const sessionExpired = (status, path, data) => status === 401 && data?.code === "session" && !path.startsWith("/api/auth/");
+
+async function req(method, path, body) {
+  let r;
   try {
-    const r = await fetch("/api/login", { method: "POST", headers: { Authorization: "Basic " + b64(`${nu}:${pass}`) } });
-    const ct = r.headers.get("content-type") || "";
-    if (!ct.includes("application/json")) return { mode: "local", user: nu }; // nu există backend → mod local
-    const j = await r.json().catch(() => null);
-    if (r.ok && j?.ok) return { mode: "cloud", user: j.user, email: j.email ?? null, created: !!j.created };
-    return { mode: "denied", error: j?.error || "utilizator sau parolă incorecte" };
+    r = await fetch(path, {
+      method,
+      credentials: "same-origin",
+      headers: body !== undefined ? { "Content-Type": "application/json" } : {},
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
   } catch {
-    return { mode: "local", user: nu };
+    throw new ApiError(0, "nu există conexiune la server — verifică internetul și încearcă din nou");
   }
-}
-
-/* ---------- profil: e-mailul de remindere ---------- */
-const emailKey = () => `fleetdeck-email:${SESSION.user || "anon"}`;
-export async function getAccountEmail() {
-  if (SESSION.mode === "cloud") {
-    try { const j = await req("GET", "/api/account"); return j.email ?? null; } catch { return null; }
+  const data = r.status === 204 ? null : await r.json().catch(() => null);
+  if (!r.ok) {
+    if (sessionExpired(r.status, path, data)) onUnauthorized();
+    throw new ApiError(r.status, data?.error || `eroare de server (${r.status})`, data?.code);
   }
-  return localStorage.getItem(emailKey()) || null;
-}
-export async function saveAccountEmail(email) {
-  if (SESSION.mode === "cloud") {
-    const j = await req("PATCH", "/api/account", { email: email || null });
-    return j.email ?? null;
-  }
-  if (email) localStorage.setItem(emailKey(), email);
-  else localStorage.removeItem(emailKey());
-  return email || null;
+  return data;
 }
 
-/* ---------- backend local (per utilizator) ---------- */
-const lsKey = () => `fleetdeck-vehicles:${SESSION.user || "anon"}`;
-function lsRead() {
-  try {
-    let all = JSON.parse(localStorage.getItem(lsKey()) || "null");
-    if (all == null) {
-      // adoptă datele din formatul vechi, fără useri (o singură dată)
-      const legacy = localStorage.getItem("fleetdeck-vehicles");
-      if (legacy) { localStorage.setItem(lsKey(), legacy); localStorage.removeItem("fleetdeck-vehicles"); all = JSON.parse(legacy); }
-    }
-    return Array.isArray(all) ? all : [];
-  } catch { return []; }
-}
-function lsWrite(all) { localStorage.setItem(lsKey(), JSON.stringify(all)); }
-
-function applyEventLocal(v, { event, patch }) {
-  const e = { id: uid(), created: now(), date: event.date || today(), ...event };
-  v.events = [...(v.events || []), e];
-  if (patch) Object.assign(v, patch);
-  if (e.km && +e.km > (v.km || 0)) { v.km = +e.km; v.kmUpdatedAt = now(); }
-}
-
-const DOC_LABELS = { itp: "ITP", rca: "RCA", rovinieta: "Rovinietă", casco: "CASCO", warranty: "Garanție", leasing: "Leasing" };
-
-const localApi = {
-  mode: "local",
-  async list() { return lsRead(); },
-  async create(data) {
-    const all = lsRead();
-    const v = { id: uid(), createdAt: now(), documents: [], events: [], tyres: null, kmUpdatedAt: now(), ...data };
-    all.push(v); lsWrite(all); return v;
-  },
-  async patch(id, fields) {
-    const all = lsRead(); const v = all.find((x) => x.id === id);
-    if (!v) throw new Error("mașina nu există");
-    Object.assign(v, fields); lsWrite(all); return v;
-  },
-  async remove(id) { lsWrite(lsRead().filter((x) => x.id !== id)); },
-  async addEvent(id, payload) {
-    const all = lsRead(); const v = all.find((x) => x.id === id);
-    if (!v) throw new Error("mașina nu există");
-    applyEventLocal(v, payload); lsWrite(all); return v;
-  },
-  async deleteEvent(id, eid) {
-    const all = lsRead(); const v = all.find((x) => x.id === id);
-    if (!v) throw new Error("mașina nu există");
-    v.events = (v.events || []).filter((e) => e.id !== eid); lsWrite(all); return v;
-  },
-  async putDocument(id, type, { expires, provider, cost, photo }) {
-    const all = lsRead(); const v = all.find((x) => x.id === id);
-    if (!v) throw new Error("mașina nu există");
-    v.documents = v.documents || [];
-    const d = v.documents.find((x) => x.type === type);
-    const existed = !!d;
-    if (d) { d.expires = expires; if (provider) d.provider = provider; }
-    else v.documents.push({ id: uid(), type, expires, provider: provider || null });
-    applyEventLocal(v, { event: { kind: "document", type, title: `${DOC_LABELS[type] || type} ${existed ? "reînnoit" : "adăugat"}`, cost: cost || null, note: provider || null, photo: photo || null } });
-    lsWrite(all); return v;
-  },
+export const authApi = {
+  me: () => req("GET", "/api/auth/me"),
+  login: (identifier, password, remember = true) => req("POST", "/api/auth/login", { identifier, password, remember }),
+  register: (data) => req("POST", "/api/auth/register", data),
+  logout: () => req("POST", "/api/auth/logout", {}),
+  forgot: (email) => req("POST", "/api/auth/forgot", { email }),
+  reset: (token, password) => req("POST", "/api/auth/reset", { token, password }),
+  confirmReminder: (token) => req("POST", "/api/auth/confirm-reminder", { token }),
 };
 
-/* ---------- backend cloud ---------- */
-async function req(method, path, body) {
-  const r = await fetch(path, {
-    method,
-    headers: { ...authHeader(), ...(body ? { "Content-Type": "application/json" } : {}) },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!r.ok) {
-    let msg = r.status === 401 ? "sesiune expirată — intră din nou în cont" : "eroare de server (" + r.status + ")";
-    try { const j = await r.json(); if (j.error) msg = j.error; } catch { /* noop */ }
-    throw new Error(msg);
-  }
-  return r.status === 204 ? null : r.json();
-}
+export const accountApi = {
+  update: (fields) => req("PATCH", "/api/account", fields),
+  changePassword: (current, next) => req("POST", "/api/account/password", { current, next }),
+  lookupCompany: (cui) => req("GET", `/api/company?cui=${encodeURIComponent(cui)}`),
+};
 
-const remoteApi = {
-  mode: "cloud",
+export const vehiclesApi = {
   list: () => req("GET", "/api/vehicles"),
   create: (d) => req("POST", "/api/vehicles", d),
+  import: (vehicles, mode = "merge") => req("POST", "/api/vehicles/import", { vehicles, mode }),
   patch: (id, f) => req("PATCH", `/api/vehicles/${id}`, f),
   remove: (id) => req("DELETE", `/api/vehicles/${id}`),
   addEvent: (id, p) => req("POST", `/api/vehicles/${id}/events`, p),
   deleteEvent: (id, eid) => req("DELETE", `/api/vehicles/${id}/events/${eid}`),
   putDocument: (id, type, p) => req("PUT", `/api/vehicles/${id}/documents/${type}`, p),
+  removeDocument: (id, type) => req("DELETE", `/api/vehicles/${id}/documents/${type}`),
+  photoUrl: (id, eid) => `/api/vehicles/${id}/photos/${eid}`,
 };
 
-/* ---------- scanare document cu AI (doar pe versiunea publicată) ---------- */
-export async function scanDocument(image) {
-  if (SESSION.mode !== "cloud") throw new Error("scanarea AI funcționează doar pe versiunea publicată pe Netlify");
-  return req("POST", "/api/scan", { image });
+export const scanDocument = (image) => req("POST", "/api/scan", { image });
+
+/* versiunea veche ținea { user, pass } în localStorage — îl folosim o singură dată ca să intrăm, apoi îl ștergem.
+   Parola rămâne doar în memorie, pentru schimbarea obligatorie a unei parole slabe. */
+const LEGACY_SESSION = "fleetdeck-session";
+export async function migrateLegacySession(storage = globalThis.localStorage) {
+  let legacy = null;
+  try { legacy = JSON.parse(storage.getItem(LEGACY_SESSION) || "null"); } catch { /* format stricat */ }
+  storage.removeItem(LEGACY_SESSION);
+  for (const k of Object.keys(storage)) if (k.startsWith("fleetdeck-email:")) storage.removeItem(k);
+  if (!legacy?.user || !legacy?.pass) return null;
+  try { return { account: (await authApi.login(legacy.user, legacy.pass, true)).account, password: legacy.pass }; } catch { return null; }
 }
 
-/* ---------- inițializare după login ---------- */
-export async function initApi(mode) {
-  if (mode === "cloud") {
-    try {
-      const vehicles = await remoteApi.list();
-      return { api: remoteApi, vehicles: Array.isArray(vehicles) ? vehicles : [] };
-    } catch { /* cade pe local */ }
-  }
-  return { api: localApi, vehicles: lsRead() };
+/* mașinile din vechiul „mod local": doar ale utilizatorului vechi din acest cont, nu ale altora de pe același browser */
+const BROWSER_VEHICLES = "fleetdeck-vehicles";
+const browserVehicleKeys = (account) => (account?.legacyUser ? [`${BROWSER_VEHICLES}:${account.legacyUser}`, BROWSER_VEHICLES] : []);
+
+export function readBrowserVehicles(account, storage = globalThis.localStorage) {
+  return browserVehicleKeys(account).flatMap((k) => {
+    try { const list = JSON.parse(storage.getItem(k) || "[]"); return Array.isArray(list) ? list : []; } catch { return []; }
+  });
+}
+
+export function forgetBrowserVehicles(account, keep = [], storage = globalThis.localStorage) {
+  const [own, ...rest] = browserVehicleKeys(account);
+  if (!own) return;
+  rest.forEach((k) => storage.removeItem(k));
+  if (keep.length) storage.setItem(own, JSON.stringify(keep));
+  else storage.removeItem(own);
 }

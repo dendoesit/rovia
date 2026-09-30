@@ -1,206 +1,203 @@
+import { useState } from "react";
 import {
-  DOC_TYPES, CORE_DOCS, ATT, latestDocs, healthItems, costStats, fuelEstimate,
-  eventTitle, eventIcon, daysLeft, dayStatus, worst,
-  fmtKm, fmtMoney, fmtDate, dateLabel, relTime, zile,
+  DOC_TYPES, CATEGORIES, ATT, healthItems, docRows, historyPage, pricePerLiter,
+  eventTitle, eventIcon, worst, vehicleName,
+  fmtKm, fmtQty, fmtMoney, fmtDate, dateLabel, relTime, zile,
 } from "../lib/model";
-import { nav } from "../lib/nav";
+import CarCosts from "./CarCosts";
 
 const TABS = [["health", "Stare"], ["costs", "Costuri"], ["docs", "Documente"], ["history", "Istoric"]];
+const QUICK = [["work", "🔧", "Lucrare"], ["fuel", "⛽", "Alimentare"], ["expense", "💶", "Cheltuială"], ["doc", "📄", "Document"], ["km", "📍", "Kilometraj"]];
+const HISTORY_PAGE = 50;
 
-export default function CarPage({ v, tab, actions }) {
-  const open = actions.openModal;
+export default function CarPage({ v, tab, actions, account, features }) {
+  const open = (kind, extra) => actions.openModal({ kind, vid: v.id, ...extra });
+  const current = TABS.some(([k]) => k === tab) ? tab : "health";
   return (
     <>
-      <button className="back" onClick={() => nav("#/")}>← Garaj</button>
-      <div className="car-head">
+      <a className="back" href="#/">← Garaj</a>
+      <section className="car-head" aria-label="Mașina">
         <div className="car-head-top">
-          <div>
-            <h1>{v.make} {v.model}</h1>
+          <div className="car-title">
+            <h1>{vehicleName(v)}</h1>
             <div className="meta">
               <span className="plate">{v.plate}</span>
+              {CATEGORIES[v.category] && <span>{CATEGORIES[v.category]}</span>}
               {v.year && <span>{v.year}</span>}
               {v.fuel && <span>{v.fuel}</span>}
-              {v.vin && <span title="VIN">VIN {v.vin}</span>}
+              {v.driver && <span><span aria-hidden="true">👤 </span>Șofer: {v.driver}</span>}
+              {v.vin && <span className="vin">VIN {v.vin}</span>}
             </div>
+            {v.notes && <p className="car-notes">📝 {v.notes}</p>}
           </div>
-          <button className="btn ghost small" onClick={() => open({ kind: "vehicle", vid: v.id })}>Editează</button>
+          <button type="button" className="btn ghost small" onClick={() => open("vehicle")}>Editează</button>
         </div>
         <div className="km-row">
           <span className="km-big">{fmtKm(v.km)} <small>km</small></span>
-          <button className="btn ghost small" onClick={() => open({ kind: "km", vid: v.id })}>Actualizează</button>
+          <button type="button" className="btn ghost small" onClick={() => open("km")}>Actualizează</button>
           <span className="km-upd">Actualizat: {relTime(v.kmUpdatedAt)}</span>
         </div>
-      </div>
+      </section>
 
-      <div className="quick">
-        <button className="qbtn" onClick={() => open({ kind: "work", vid: v.id })}><span className="ico">🔧</span>Lucrare</button>
-        <button className="qbtn" onClick={() => open({ kind: "doc", vid: v.id })}><span className="ico">📄</span>Document</button>
-      </div>
-
-      <div className="tabs">
-        {TABS.map(([k, l]) => (
-          <button key={k} className={`tab ${tab === k ? "active" : ""}`} onClick={() => nav(`#/car/${v.id}/${k}`)}>{l}</button>
+      <div className="quick" role="group" aria-label="Adaugă rapid">
+        {QUICK.map(([kind, icon, label]) => (
+          <button type="button" key={kind} className="qbtn" onClick={() => open(kind)}>
+            <span className="ico" aria-hidden="true">{icon}</span>{label}
+          </button>
         ))}
       </div>
 
-      {tab === "costs" ? <Costs v={v} /> : tab === "docs" ? <Docs v={v} actions={actions} /> : tab === "history" ? <History v={v} actions={actions} /> : <Health v={v} actions={actions} />}
+      <nav className="tabs" aria-label="Secțiuni">
+        {TABS.map(([k, l]) => (
+          <a key={k} href={`#/car/${v.id}/${k}`} className={`tab${current === k ? " active" : ""}`} aria-current={current === k ? "page" : undefined}>{l}</a>
+        ))}
+      </nav>
+
+      {current === "costs" ? <CarCosts v={v} actions={actions} account={account} features={features} />
+        : current === "docs" ? <Docs v={v} open={open} actions={actions} />
+        : current === "history" ? <History key={v.id} v={v} open={open} />
+        : <Health v={v} open={open} />}
     </>
   );
 }
 
 /* ---------- Stare ---------- */
-function Health({ v, actions }) {
+const BANNER = { warn: ["warn", "⏳"], orange: ["orange", "⚠️"], crit: ["crit", "🚨"], dead: ["crit", "🚨"] };
+const lucruri = (n) => (n === 1 ? "1 lucru necesită atenție" : `${n} lucruri necesită atenție`);
+
+function Health({ v, open }) {
   const items = healthItems(v);
   const att = items.filter((i) => ATT.includes(i.status));
-  const w = worst(...att.map((i) => i.status), "none");
-  const bannerCls = w === "warn" ? "warn" : w === "orange" ? "orange" : "crit";
-  const bannerIco = w === "warn" ? "⏳" : w === "orange" ? "⚠️" : "🚨";
-  const openAction = (a) => {
-    if (a.kind === "service") actions.openModal({ kind: "service", vid: v.id });
-    else if (a.kind === "renew") actions.openModal({ kind: "renew", vid: v.id, type: a.type });
-    else if (a.kind === "doc") actions.openModal({ kind: "doc", vid: v.id, preType: a.type });
-    else if (a.kind === "tyres") actions.openModal({ kind: "tyres", vid: v.id });
-  };
+  const missing = items.filter((i) => i.status === "missing");
+  const [cls, icon] = BANNER[worst(...att.map((i) => i.status), "warn")];
+  const openAction = ({ kind, type }) => open(kind, kind === "doc" ? { preType: type } : { type });
   return (
     <>
-      {att.length
-        ? <div className={`banner ${bannerCls}`}>{bannerIco} {att.length === 1 ? "1 lucru necesită atenție" : `${att.length} lucruri necesită atenție`}</div>
-        : <div className="banner ok">🟢 Totul e în regulă</div>}
+      {att.length > 0 && <div className={`banner ${cls}`}><span aria-hidden="true">{icon}</span> {lucruri(att.length)}</div>}
+      {missing.length > 0 && <div className="banner missing"><span aria-hidden="true">📄</span> Documente obligatorii lipsă: {missing.map((i) => i.label).join(", ")}</div>}
+      {!att.length && !missing.length && <div className="banner ok"><span aria-hidden="true">🟢</span> Totul e în regulă</div>}
       <div className="stats">
-        {items.map((i, idx) => (
-          <div key={idx} className="stat" onClick={() => openAction(i.action)}>
-            <div className="lbl"><span>{i.icon}</span>{i.label}</div>
-            <div className={`val ${i.status}`}>{i.value}</div>
-            <div className="sub">{i.sub}</div>
-          </div>
+        {items.map((i) => (
+          <button type="button" key={i.label} className="stat" onClick={() => openAction(i.action)}>
+            <span className="lbl"><span aria-hidden="true">{i.icon}</span>{i.label}</span>
+            <span className={`val ${i.status}`}>{i.value}</span>
+            <span className="sub">{i.sub}</span>
+          </button>
         ))}
-      </div>
-    </>
-  );
-}
-
-/* ---------- Costuri ---------- */
-function Costs({ v }) {
-  const { year, total, cats, perKm, lastService } = costStats(v);
-  const fe = fuelEstimate(v);
-  const catDefs = [["fuel", "Combustibil", "c-fuel"], ["maintenance", "Mentenanță", "c-maint"], ["document", "Documente", "c-docs"], ["expense", "Altele", "c-other"]];
-  const NOD = <span className="nodata">Încă nu sunt destule date</span>;
-  return (
-    <>
-      <div className="cost-hero">
-        <div className="lbl">Cheltuit în {year}</div>
-        <div className="big">{total > 0 ? fmtMoney(total) : "€0"}</div>
-        {total > 0 ? (
-          <>
-            <div className="bar">
-              {catDefs.map(([k, , c]) => cats[k] > 0 && <div key={k} className={c} style={{ width: `${((cats[k] / total) * 100).toFixed(1)}%` }} />)}
-            </div>
-            <div className="legend">
-              {catDefs.map(([k, l, c]) => cats[k] > 0 && <span key={k}><i className={c} />{l} {fmtMoney(cats[k])}</span>)}
-            </div>
-          </>
-        ) : (
-          <div className="nodata">Costurile apar aici pe măsură ce înregistrezi alimentări, lucrări și documente.</div>
-        )}
-      </div>
-      <div className="stats">
-        <div className="stat" style={{ cursor: "default" }}>
-          <div className="lbl"><span>📐</span>Cost pe km</div>
-          <div className="val">{perKm ? "€" + perKm.toFixed(2) : NOD}</div>
-          <div className="sub">{perKm ? "pe baza km înregistrați" : "necesită intrări cu kilometraj"}</div>
-        </div>
-        <div className="stat" style={{ cursor: "default" }}>
-          <div className="lbl"><span>⛽</span>Combustibil (estimat)</div>
-          <div className="val">{fe ? `~${fmtMoney(Math.round(fe.costMonth))}/lună` : NOD}</div>
-          <div className="sub">{fe
-            ? `~${fmtKm(fe.kmAn)} km/an · ${fe.cons.toFixed(1)} ${fe.unit}/100km${fe.real ? "" : ` (medie ${v.fuel})`} · ~${fmtMoney(Math.round(fe.costYear))}/an`
-            : "necesită kilometraj + anul mașinii"}</div>
-        </div>
-        <div className="stat" style={{ cursor: "default" }}>
-          <div className="lbl"><span>🔧</span>Ultimul service</div>
-          <div className="val">{lastService ? fmtMoney(lastService.cost) : NOD}</div>
-          <div className="sub">{lastService ? fmtDate(lastService.date) : "înregistrează un service"}</div>
-        </div>
       </div>
     </>
   );
 }
 
 /* ---------- Documente ---------- */
-function Docs({ v, actions }) {
-  const docs = latestDocs(v);
-  const types = [...new Set([...Object.keys(docs), ...CORE_DOCS, "casco"])].filter((t) => DOC_TYPES[t]);
+function docState(r) {
+  if (!r.doc) return r.required ? "Obligatoriu · lipsește" : "Neadăugat încă";
+  if (r.daysLeft < 0) return `Expirat acum ${zile(r.daysLeft)}`;
+  return r.daysLeft === 0 ? "Expiră azi" : `Activ · încă ${zile(r.daysLeft)}`;
+}
+
+function Docs({ v, open, actions }) {
+  const rows = docRows(v);
+  const missing = rows.filter((r) => r.status === "missing");
+  const remove = (type) => {
+    const label = DOC_TYPES[type].label;
+    if (confirm(`Ștergi ${label} de la ${vehicleName(v)}? Intrările din istoric rămân.`)) actions.removeDocument(v.id, type, `Document șters: ${label}`);
+  };
   return (
     <>
       <div className="section-head">
-        <h3>Documente</h3>
-        <button className="btn ghost small" onClick={() => actions.openModal({ kind: "doc", vid: v.id })}>+ Adaugă document</button>
+        <h2>Documente</h2>
+        <button type="button" className="btn ghost small" onClick={() => open("doc")}>+ Adaugă document</button>
       </div>
-      <div className="doc-list">
-        {types.map((t) => {
-          const meta = DOC_TYPES[t];
-          const d = docs[t];
-          if (!d)
-            return (
-              <div key={t} className="doc-row missing">
-                <div className="doc-ico">{meta.icon}</div>
-                <div className="info"><div className="name">{meta.label}</div><div className="st none">Neadăugat încă</div></div>
-                <button className="btn ghost small" onClick={() => actions.openModal({ kind: "doc", vid: v.id, preType: t })}>Adaugă</button>
-              </div>
-            );
-          const dl = daysLeft(d.expires);
-          const st = dayStatus(dl);
+      {missing.length > 0 && (
+        <div className="banner missing"><span aria-hidden="true">📄</span> Documente obligatorii lipsă: {missing.map((r) => DOC_TYPES[r.type].label).join(", ")}</div>
+      )}
+      <ul className="doc-list">
+        {rows.map((r) => {
+          const meta = DOC_TYPES[r.type];
           return (
-            <div key={t} className="doc-row">
-              <div className="doc-ico">{meta.icon}</div>
+            <li key={r.type} className={`doc-row${r.doc ? "" : " empty"}${r.status === "missing" ? " required" : ""}`}>
+              <span className="doc-ico" aria-hidden="true">{meta.icon}</span>
               <div className="info">
-                <div className="name">{meta.label}{d.provider && <span className="muted"> · {d.provider}</span>}</div>
-                <div className={`st ${st}`}>
-                  {dl < 0 ? `Expirat acum ${zile(dl)}` : `Activ · încă ${zile(dl)}`} <span className="muted">({fmtDate(d.expires)})</span>
-                </div>
+                <div className="name">{meta.label}{r.doc?.provider && <span className="muted"> · {r.doc.provider}</span>}</div>
+                <div className={`st ${r.status}`}>{docState(r)}{r.doc && <span className="muted"> ({fmtDate(r.doc.expires)})</span>}</div>
               </div>
-              <button className="btn small" onClick={() => actions.openModal({ kind: "renew", vid: v.id, type: t })}>Reînnoiește →</button>
-            </div>
+              <div className="doc-actions">
+                {r.doc ? (
+                  <>
+                    <button type="button" className="btn small" onClick={() => open("renew", { type: r.type })}>Reînnoiește →</button>
+                    <button type="button" className="icon-btn" aria-label={`Șterge ${meta.label}`} title={`Șterge ${meta.label}`} onClick={() => remove(r.type)}>🗑</button>
+                  </>
+                ) : (
+                  <button type="button" className={`btn small${r.required ? "" : " ghost"}`} onClick={() => open("doc", { preType: r.type })}>Adaugă</button>
+                )}
+              </div>
+            </li>
           );
         })}
-      </div>
-      <div className="hint">Reînnoirile apar automat în Istoric. Cumpărarea RCA / rovinietei direct din aplicație poate fi conectată aici ulterior.</div>
+      </ul>
+      <div className="hint">Reînnoirile apar automat în Istoric. La rovinietă și RCA, „Reînnoiește” îți arată prețul, copiază datele mașinii și ale firmei și deschide portalul oficial sau brokerul.</div>
     </>
   );
 }
 
 /* ---------- Istoric ---------- */
-function History({ v, actions }) {
-  const evts = [...(v.events || [])].sort((a, b) => b.date.localeCompare(a.date) || (b.created || "").localeCompare(a.created || ""));
-  if (!evts.length)
+function eventDetails(e, unit) {
+  const parts = [];
+  if (e.kind === "odometer") return e.km != null ? [`${fmtKm(e.km)} km`] : [];
+  if (e.liters) parts.push(`${fmtQty(e.liters)} ${unit}`);
+  const ppl = e.kind === "fuel" ? pricePerLiter(e.cost, e.liters) : null;
+  if (ppl) parts.push(`${fmtMoney(Math.round(ppl * 100) / 100)}/${unit}`);
+  if (e.km) parts.push(`${fmtKm(e.km)} km`);
+  if (e.note) parts.push(e.note);
+  return parts;
+}
+
+function History({ v, open }) {
+  const [limit, setLimit] = useState(HISTORY_PAGE);
+  const page = historyPage(v, limit);
+  const unit = v.fuel === "Electric" ? "kWh" : "L";
+  if (!page.total)
     return (
-      <div className="card" style={{ padding: 34, textAlign: "center" }}>
+      <div className="card empty-card">
         <div className="nodata">Încă nu există istoric — se construiește singur pe măsură ce înregistrezi alimentări, lucrări și documente.</div>
       </div>
     );
   return (
-    <div className="card">
-      <div className="tl">
-        {evts.map((e) => {
-          const subs = [];
-          if (e.liters) subs.push(`${e.liters} L`);
-          if (e.km) subs.push(`${fmtKm(e.km)} km`);
-          if (e.note) subs.push(e.note);
-          return (
-            <div key={e.id} className="tl-item" onClick={() => actions.openModal({ kind: "event", vid: v.id, eid: e.id })}>
-              <div className={`tl-ico ${e.kind}`}>{eventIcon(e)}</div>
-              <div className="mid">
-                <div className="t">{eventTitle(e)}{e.photo ? " 📎" : ""}</div>
-                <div className="s">{subs.join(" · ") || " "}</div>
-              </div>
-              <div className="right">
-                {e.cost != null && e.cost !== 0 && <div className="cost">{fmtMoney(e.cost)}</div>}
-                <div className="date">{dateLabel(e.date)}</div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
+    <>
+      {page.groups.map((g) => (
+        <section key={g.key} className="tl-month" aria-label={g.label}>
+          <h2 className="tl-month-head">
+            <span>{g.label}</span>
+            {g.total > 0 && <span className="tl-month-total">{fmtMoney(g.total)}</span>}
+          </h2>
+          <ul className="card tl">
+            {g.items.map((e) => (
+              <li key={e.id}>
+                <button type="button" className="tl-item" onClick={() => open("event", { eid: e.id })}>
+                  <span className={`tl-ico ${e.kind}`} aria-hidden="true">{eventIcon(e)}</span>
+                  <span className="mid">
+                    <span className="t">
+                      {eventTitle(e)}
+                      {e.hasPhoto && <span className="clip" title="Are poză atașată"> 📎<span className="sr-only"> (are poză)</span></span>}
+                    </span>
+                    <span className="s">{eventDetails(e, unit).join(" · ")}</span>
+                  </span>
+                  <span className="right">
+                    {e.cost > 0 && <span className="cost">{fmtMoney(e.cost)}</span>}
+                    <span className="date">{dateLabel(e.date)}</span>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
+      {page.hidden > 0 && (
+        <button type="button" className="btn ghost more" onClick={() => setLimit(limit + HISTORY_PAGE)}>
+          Arată mai multe ({page.hidden} {page.hidden === 1 ? "rămasă" : "rămase"})
+        </button>
+      )}
+    </>
   );
 }

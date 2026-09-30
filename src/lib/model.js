@@ -1,212 +1,153 @@
-/* FleetDeck — model & logică pură (fără DOM) */
+/* FleetDeck — model & logică pură (fără DOM). Constantele și regulile comune cu serverul stau în /shared. */
+import { DOC_TYPES, CORE_DOCS, MAINT_TYPES, FUELS, CATEGORIES, CURRENCIES, DEFAULT_CURRENCY, FUEL_CONSUMPTION, DATE_RE, normalizePlate } from "../../shared/domain.js";
+import { bucharestToday, daysLeft as daysLeftFrom, addDaysTo, addMonthsTo, daysBetween, monthKey } from "../../shared/dates.js";
+import { dayStatus, kmStatus, WORST, worst, ATT, latestDocs, collectAlerts, serviceStatus, requiredDocs, vehicleName, zile, fmtKm } from "../../shared/alerts.js";
+import { vignetteQuote } from "../../shared/renewals.js";
 
-export const DOC_TYPES = {
-  itp:       { label: "ITP",       icon: "🔍" },
-  rca:       { label: "RCA",       icon: "🛡️" },
-  rovinieta: { label: "Rovinietă", icon: "🛣️" },
-  casco:     { label: "CASCO",     icon: "☂️" },
-  warranty:  { label: "Garanție",  icon: "📜" },
-  leasing:   { label: "Leasing",   icon: "🏦" },
+export { DOC_TYPES, CORE_DOCS, MAINT_TYPES, FUELS, CATEGORIES, normalizePlate, dayStatus, kmStatus, WORST, worst, ATT, latestDocs, collectAlerts, requiredDocs, vehicleName, zile, fmtKm };
+export const KIND_ICON = { fuel: "⛽", expense: "💶", document: "📄", odometer: "📍" };
+
+export const EXPENSE_TYPES = {
+  spalatorie: { label: "Spălătorie",   icon: "🧽" },
+  parcare:    { label: "Parcare",      icon: "🅿️" },
+  amenda:     { label: "Amendă",       icon: "👮" },
+  taxa:       { label: "Taxă de drum", icon: "🌉" },
+  accesorii:  { label: "Accesorii",    icon: "🧰" },
+  altele:     { label: "Altele",       icon: "💶" },
 };
-export const CORE_DOCS = ["itp", "rca", "rovinieta"];
 
-export const MAINT_TYPES = {
-  service: { label: "Service / Revizie", icon: "🔧" },
-  brakes:  { label: "Frâne",             icon: "🛑" },
-  tyres:   { label: "Anvelope",          icon: "🛞" },
-  battery: { label: "Baterie",           icon: "🔋" },
-  repair:  { label: "Reparație",         icon: "🛠️" },
-};
-export const FUELS = ["Benzină", "Motorină", "Hibrid", "Hibrid plug-in", "Electric", "GPL"];
-export const KIND_ICON = { fuel: "⛽", expense: "💶", document: "📄" };
-
-/* ---------- formatare (ro-RO) ---------- */
-export const todayStr = () => new Date().toISOString().slice(0, 10);
-export const fmtKm = (n) => (n == null || n === "" ? "—" : (+n).toLocaleString("ro-RO"));
-export const fmtMoney = (n) => "€" + (+n).toLocaleString("ro-RO", { maximumFractionDigits: +n % 1 ? 2 : 0 });
-export const zile = (n) => { const a = Math.abs(n); return a === 1 ? "o zi" : a < 20 ? `${a} zile` : `${a} de zile`; };
-
-export function daysLeft(ds) {
-  if (!ds) return null;
-  return Math.floor((new Date(ds + "T23:59:59") - new Date()) / 86400000);
+/* ---------- monedă (setată din profilul contului) ---------- */
+let currency = DEFAULT_CURRENCY;
+export const setCurrency = (code) => { currency = CURRENCIES[code] ? code : DEFAULT_CURRENCY; };
+export const currencySymbol = () => CURRENCIES[currency].symbol;
+export const currencyCode = () => currency;
+export function fmtMoney(n) {
+  const v = +n || 0;
+  const s = v.toLocaleString("ro-RO", { maximumFractionDigits: v % 1 ? 2 : 0 });
+  return currency === "EUR" ? `€${s}` : `${s} lei`;
 }
+export const fmtQty = (n) => (+n).toLocaleString("ro-RO", { maximumFractionDigits: 2 });
+export const FUEL_PRICE = new Proxy({}, { get: (_, fuel) => CURRENCIES[currency].fuelPrice[fuel] });
+export const FUEL_CONS = FUEL_CONSUMPTION;
+
+/* ---------- date (ora României) ---------- */
+export const todayStr = () => bucharestToday();
+export const daysLeft = (ds) => daysLeftFrom(ds, todayStr());
+export const addDays = (n, from = todayStr()) => addDaysTo(from, n);
+export const addMonths = (n, from = todayStr()) => addMonthsTo(from, n);
+
 const LUNI = ["ian", "feb", "mar", "apr", "mai", "iun", "iul", "aug", "sep", "oct", "noi", "dec"];
 export function fmtDate(ds) {
   if (!ds) return "—";
-  const d = new Date(ds + "T12:00:00");
-  let s = `${d.getDate()} ${LUNI[d.getMonth()]}`;
-  if (d.getFullYear() !== new Date().getFullYear()) s += ` ${d.getFullYear()}`;
-  return s;
+  const [y, m, d] = ds.slice(0, 10).split("-").map(Number);
+  return `${d} ${LUNI[m - 1]}${y !== +todayStr().slice(0, 4) ? ` ${y}` : ""}`;
 }
 export function dateLabel(ds) {
   if (ds === todayStr()) return "Azi";
-  if (ds === new Date(Date.now() - 864e5).toISOString().slice(0, 10)) return "Ieri";
+  if (ds === addDays(-1)) return "Ieri";
   return fmtDate(ds);
 }
 export function relTime(iso) {
   if (!iso) return "—";
-  const d = Math.floor((Date.now() - new Date(iso)) / 864e5);
+  const d = daysBetween(bucharestToday(new Date(iso)), todayStr());
   if (d <= 0) return "azi";
   if (d === 1) return "ieri";
   if (d < 30) return `acum ${zile(d)}`;
-  return fmtDate(iso.slice(0, 10));
+  return fmtDate(bucharestToday(new Date(iso)));
 }
-
-/* ---------- praguri de urgență ----------
-   galben ≤30 zile → portocaliu ≤15 → roșu ≤5 (apoi zilnic) → expirat */
-export function dayStatus(d) {
-  if (d == null) return "none";
-  if (d < 0) return "dead";
-  if (d <= 5) return "crit";
-  if (d <= 15) return "orange";
-  if (d <= 30) return "warn";
-  return "ok";
-}
-export function kmStatus(left) {
-  if (left == null) return "none";
-  if (left <= 0) return "dead";
-  if (left <= 300) return "crit";
-  if (left <= 800) return "orange";
-  if (left <= 1500) return "warn";
-  return "ok";
-}
-export const WORST = { none: 0, ok: 1, warn: 2, orange: 3, crit: 4, dead: 5 };
-export const worst = (...s) => s.reduce((a, b) => ((WORST[b] ?? 0) > (WORST[a] ?? 0) ? b : a), "none");
-export const ATT = ["warn", "orange", "crit", "dead"];
 
 /* ---------- stare mașină ---------- */
-export function latestDocs(v) {
-  const out = {};
-  for (const d of v.documents || []) {
-    if (!d.expires) continue;
-    if (!out[d.type] || d.expires > out[d.type].expires) out[d.type] = d;
-  }
-  return out;
-}
-
 export function healthItems(v) {
   const items = [];
-  // următorul service
-  const kmLeft = v.nextServiceKm && v.km ? v.nextServiceKm - v.km : null;
-  const dLeft = v.nextServiceDate ? daysLeft(v.nextServiceDate) : null;
-  const sStat = kmLeft == null && dLeft == null ? "none" : worst(kmStatus(kmLeft), dLeft == null ? "none" : dayStatus(dLeft));
+  const s = serviceStatus(v, todayStr());
   const rec = serviceIntervalFor(v);
   let sVal = "Nesetat", sSub = `Recomandat: ${fmtKm(rec.km)} km / ${rec.months} luni`;
-  if (kmLeft != null) {
-    sVal = kmLeft <= 0 ? "Depășit" : `~${fmtKm(kmLeft)} km`;
-    sSub = `la ${fmtKm(v.nextServiceKm)} km`;
-    if (dLeft != null) sSub += ` · ${fmtDate(v.nextServiceDate)}`;
-  } else if (dLeft != null) {
-    sVal = dLeft < 0 ? "Depășit" : zile(dLeft);
-    sSub = fmtDate(v.nextServiceDate);
+  if (s.driver === "km") {
+    sVal = s.kmLeft <= 0 ? "Depășit" : `~${fmtKm(s.kmLeft)} km`;
+    sSub = `la ${fmtKm(v.nextServiceKm)} km${v.nextServiceDate ? ` · ${fmtDate(v.nextServiceDate)}` : ""}`;
+  } else if (s.driver === "date") {
+    sVal = s.dLeft < 0 ? "Depășit" : zile(s.dLeft);
+    sSub = `${fmtDate(v.nextServiceDate)}${s.kmLeft != null ? ` · ~${fmtKm(s.kmLeft)} km rămași` : ""}`;
   }
-  items.push({ icon: "🔧", label: "Următorul service", value: sVal, sub: sSub, status: sStat, action: { kind: "service" } });
+  items.push({ icon: "🔧", label: "Următorul service", value: sVal, sub: sSub, status: s.status, action: { kind: "service" } });
 
-  // documente
   const docs = latestDocs(v);
-  const types = [...new Set([...CORE_DOCS, ...Object.keys(docs)])];
-  for (const t of types) {
-    if (!DOC_TYPES[t]) continue;
+  const required = requiredDocs(v);
+  for (const t of [...new Set([...required, ...Object.keys(docs)])]) {
+    if (!Object.hasOwn(DOC_TYPES, t)) continue;
     const d = docs[t];
     const dl = d ? daysLeft(d.expires) : null;
     items.push({
       icon: DOC_TYPES[t].icon, label: DOC_TYPES[t].label,
       value: d ? (dl < 0 ? "Expirat" : zile(dl)) : "Lipsește",
       sub: d ? `până la ${fmtDate(d.expires)}` : "Apasă pentru a adăuga",
-      status: d ? dayStatus(dl) : "none",
+      status: d ? dayStatus(dl) : required.includes(t) ? "missing" : "none",
       action: d ? { kind: "renew", type: t } : { kind: "doc", type: t },
     });
   }
-  // anvelope
   const tMap = { good: ["Bune", "ok"], attention: ["De verificat", "warn"] };
   const [tVal, tStat] = tMap[v.tyres] || ["Nesetat", "none"];
   items.push({ icon: "🛞", label: "Anvelope", value: tVal, sub: v.tyresNote || "Apasă pentru a actualiza", status: tStat, action: { kind: "tyres" } });
   return items;
 }
 export const attentionItems = (v) => healthItems(v).filter((i) => ATT.includes(i.status));
+export const missingItems = (v) => healthItems(v).filter((i) => i.status === "missing");
 export const vehicleWorst = (v) => worst(...healthItems(v).map((i) => i.status), "ok");
-
-/* ---------- alerte globale (banda de notificări) ---------- */
-export function collectAlerts(vehicles) {
-  const out = [];
-  for (const v of vehicles || []) {
-    const car = `${v.make || ""} ${v.model || ""}`.trim();
-    const docs = latestDocs(v);
-    for (const [t, d] of Object.entries(docs)) {
-      if (!DOC_TYPES[t]) continue;
-      const dl = daysLeft(d.expires), st = dayStatus(dl);
-      if (ATT.includes(st))
-        out.push({
-          st, sort: dl, vid: v.id, car,
-          msg: dl < 0 ? `${DOC_TYPES[t].label} a expirat acum ${zile(dl)}`
-             : dl === 0 ? `${DOC_TYPES[t].label} expiră AZI`
-             : `${DOC_TYPES[t].label} expiră în ${zile(dl)}`,
-        });
-    }
-    // service: km și dată — o singură alertă, cea mai gravă
-    const kmLeft = v.nextServiceKm && v.km ? v.nextServiceKm - v.km : null;
-    const dLeft = v.nextServiceDate ? daysLeft(v.nextServiceDate) : null;
-    const cand = [];
-    if (kmLeft != null && ATT.includes(kmStatus(kmLeft)))
-      cand.push({ st: kmStatus(kmLeft), sort: kmLeft / 100, msg: kmLeft <= 0 ? `service depășit cu ${fmtKm(-kmLeft)} km` : `service în ~${fmtKm(kmLeft)} km` });
-    if (dLeft != null && ATT.includes(dayStatus(dLeft)))
-      cand.push({ st: dayStatus(dLeft), sort: dLeft, msg: dLeft < 0 ? `service depășit din ${fmtDate(v.nextServiceDate)}` : `service în ${zile(dLeft)}` });
-    if (cand.length) {
-      cand.sort((a, b) => WORST[b.st] - WORST[a.st] || a.sort - b.sort);
-      out.push({ ...cand[0], vid: v.id, car });
-    }
-    if (v.tyres === "attention") out.push({ st: "warn", sort: 99, vid: v.id, car, msg: "anvelopele necesită verificare" });
-  }
-  return out.sort((a, b) => WORST[b.st] - WORST[a.st] || a.sort - b.sort);
-}
 
 /* ---------- evenimente & costuri ---------- */
 export function eventTitle(e) {
   if (e.kind === "fuel") return "Alimentare";
   if (e.kind === "maintenance") return MAINT_TYPES[e.type]?.label || "Mentenanță";
   if (e.kind === "document") return e.title || "Document";
+  if (e.kind === "odometer") return "Kilometraj";
   return e.label || "Cheltuială";
 }
 export function eventIcon(e) {
   if (e.kind === "maintenance") return MAINT_TYPES[e.type]?.icon || "🛠️";
+  if (e.kind === "expense") return EXPENSE_TYPES[e.type]?.icon || KIND_ICON.expense;
   return KIND_ICON[e.kind] || "•";
 }
 
-export function costStats(v) {
-  const year = new Date().getFullYear();
+export function costStats(v, year = +todayStr().slice(0, 4)) {
   const evts = (v.events || []).filter((e) => e.cost > 0);
   const yEvts = evts.filter((e) => e.date && +e.date.slice(0, 4) === year);
   const total = yEvts.reduce((s, e) => s + +e.cost, 0);
   const cats = { fuel: 0, maintenance: 0, document: 0, expense: 0 };
-  yEvts.forEach((e) => { cats[e.kind] != null ? (cats[e.kind] += +e.cost) : (cats.expense += +e.cost); });
+  yEvts.forEach((e) => { cats[Object.hasOwn(cats, e.kind) ? e.kind : "expense"] += +e.cost; });
 
-  const kmE = (v.events || []).filter((e) => e.km).sort((a, b) => a.km - b.km);
+  const kmE = (v.events || []).filter((e) => e.km && e.date).sort((a, b) => a.date.localeCompare(b.date) || a.km - b.km);
   let perKm = null;
   if (kmE.length >= 2) {
-    const span = kmE[kmE.length - 1].km - kmE[0].km;
+    const first = kmE[0], last = kmE[kmE.length - 1];
+    const span = last.km - first.km;
     if (span >= 500) {
-      const d0 = kmE[0].date, d1 = kmE[kmE.length - 1].date;
-      const inR = evts.filter((e) => e.date >= d0 && e.date <= d1).reduce((s, e) => s + +e.cost, 0);
+      const inR = evts.filter((e) => e.date > first.date && e.date <= last.date).reduce((s, e) => s + +e.cost, 0);
       if (inR > 0) perKm = inR / span;
     }
-  }
-  const fl = (v.events || []).filter((e) => e.kind === "fuel" && e.km && e.liters).sort((a, b) => a.km - b.km);
-  let cons = null;
-  if (fl.length >= 2) {
-    const dist = fl[fl.length - 1].km - fl[0].km;
-    const L = fl.slice(1).reduce((s, e) => s + +e.liters, 0);
-    if (dist >= 100) cons = (L / dist) * 100;
   }
   const lastService =
     [...(v.events || [])].filter((e) => e.kind === "maintenance" && e.type === "service" && e.cost)
       .sort((a, b) => b.date.localeCompare(a.date))[0] || null;
-  return { year, total, cats, perKm, cons, lastService };
+  return { year, total, cats, perKm, cons: fuelConsumption(v)?.cons ?? null, lastService };
 }
 
-/* ---------- cunoștințe auto: intervale de service (după vârstă & combustibil) ---------- */
+/* consum real: doar între plinuri cu km cunoscuți, fără primul plin din interval */
+export function fuelConsumption(v) {
+  const fl = (v.events || []).filter((e) => e.kind === "fuel" && e.km && e.liters).sort((a, b) => a.km - b.km);
+  if (fl.length < 2) return null;
+  const dist = fl[fl.length - 1].km - fl[0].km;
+  if (dist < 100) return null;
+  const liters = fl.slice(1).reduce((s, e) => s + +e.liters, 0);
+  const paid = fl.slice(1).filter((e) => +e.cost > 0 && +e.liters > 0);
+  const paidLiters = paid.reduce((s, e) => s + +e.liters, 0);
+  const pricePerLiter = paidLiters ? paid.reduce((s, e) => s + +e.cost, 0) / paidLiters : null;
+  return { cons: (liters / dist) * 100, dist, liters, pricePerLiter };
+}
+
+/* ---------- cunoștințe auto ---------- */
 export function vehicleAge(v) {
   const y = +v.year;
-  return y ? Math.max(0, new Date().getFullYear() - y) : null;
+  return y ? Math.max(0, +todayStr().slice(0, 4) - y) : null;
 }
 export function serviceIntervalFor(v) {
   const age = vehicleAge(v);
@@ -214,85 +155,305 @@ export function serviceIntervalFor(v) {
   if (f === "Electric") return age != null && age > 8 ? { km: 20000, months: 12 } : { km: 30000, months: 24 };
   if (f === "GPL") return { km: 10000, months: 12 };
   if (f === "Hibrid" || f === "Hibrid plug-in") return age != null && age >= 10 ? { km: 10000, months: 12 } : { km: 15000, months: 12 };
-  // Benzină / Motorină
   if (age == null) return { km: 15000, months: 12 };
   if (age > 12) return { km: 10000, months: 12 };
   if (age >= 5) return { km: 12000, months: 12 };
   return { km: 15000, months: 12 };
 }
 
-/* ITP conform legislației RO: prima la 3 ani (mașină nouă), apoi la 2 ani,
-   iar la mașinile de peste 12 ani — anual */
+/* ITP (RO, autoturisme): prima la 3 ani de la înmatriculare, apoi la 2 ani, anual peste 12 ani */
 export function itpMonthsFor(v) {
   const age = vehicleAge(v);
   if (age == null) return { months: 24, label: "2 ani" };
   if (age >= 12) return { months: 12, label: "1 an (mașină de peste 12 ani)" };
-  if (age <= 1) return { months: 36, label: "3 ani (prima ITP, mașină nouă)" };
+  if (age < 3) return { months: 36 - age * 12, label: "prima ITP (la 3 ani de la fabricație)" };
   return { months: 24, label: "2 ani" };
 }
 
-export function addMonths(n) { const d = new Date(); d.setMonth(d.getMonth() + n); return d.toISOString().slice(0, 10); }
-export function addDays(n) { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }
-
-/* ---------- combustibil: cost estimat automat (orientativ) ----------
-   Constante ajustabile: preț €/L (€/kWh la electric) și consum mediu L/100km */
-export const FUEL_PRICE = { "Benzină": 1.50, "Motorină": 1.55, "GPL": 0.78, "Hibrid": 1.50, "Hibrid plug-in": 1.50, "Electric": 0.22 };
-export const FUEL_CONS = { "Benzină": 7.5, "Motorină": 6.5, "GPL": 9.5, "Hibrid": 5.0, "Hibrid plug-in": 6.0, "Electric": 17 };
+/* km-ul de pe fișa mașinii e o citire nouă doar dacă întrece istoricul; altfel kmUpdatedAt e doar data importului */
+export function odometerReadings(v) {
+  const pts = (v.events || []).filter((e) => +e.km > 0 && e.date).map((e) => ({ date: e.date, km: +e.km }));
+  const updated = v.kmUpdatedAt ? new Date(v.kmUpdatedAt) : null;
+  if (+v.km > 0 && updated && !isNaN(updated) && pts.every((p) => +v.km > p.km)) pts.push({ date: bucharestToday(updated), km: +v.km });
+  return pts.sort((a, b) => a.date.localeCompare(b.date) || a.km - b.km);
+}
 
 export function kmPerYear(v) {
-  // 1) din intrările cu kilometraj (cel mai precis)
-  const kmE = (v.events || []).filter((e) => e.km && e.date).sort((a, b) => a.date.localeCompare(b.date));
-  if (kmE.length >= 2) {
-    const spanKm = kmE[kmE.length - 1].km - kmE[0].km;
-    const months = (new Date(kmE[kmE.length - 1].date) - new Date(kmE[0].date)) / (30.44 * 864e5);
-    if (spanKm >= 300 && months >= 1) return Math.round((spanKm / months) * 12);
+  const points = odometerReadings(v);
+  if (points.length >= 2) {
+    const first = points[0], last = points[points.length - 1];
+    const spanKm = last.km - first.km, days = daysBetween(first.date, last.date);
+    if (spanKm >= 1000 && days >= 60) return Math.round((spanKm / days) * 365);
   }
-  // 2) km totali împărțiți la lunile de când există mașina
   if (v.km && +v.year) {
-    const months = Math.max(6, (Date.now() - new Date(+v.year, 0, 1)) / (30.44 * 864e5));
-    return Math.round((v.km / months) * 12);
+    const days = Math.max(180, daysBetween(`${+v.year}-07-01`, todayStr()));
+    return Math.round((v.km / days) * 365);
   }
   return null;
 }
 export function fuelEstimate(v) {
   const kmAn = kmPerYear(v);
   if (!kmAn) return null;
-  // consum real dacă există alimentări cu km + litri, altfel media pe tipul de combustibil
-  const fl = (v.events || []).filter((e) => e.kind === "fuel" && e.km && e.liters).sort((a, b) => a.km - b.km);
-  let cons = null, real = false;
-  if (fl.length >= 2) {
-    const dist = fl[fl.length - 1].km - fl[0].km;
-    const L = fl.slice(1).reduce((s, e) => s + +e.liters, 0);
-    if (dist >= 100) { cons = (L / dist) * 100; real = true; }
-  }
-  if (!cons) cons = FUEL_CONS[v.fuel] ?? 7.0;
-  const price = FUEL_PRICE[v.fuel] ?? 1.5;
+  const real = fuelConsumption(v);
+  const cons = real?.cons ?? FUEL_CONS[v.fuel] ?? 7.0;
+  const price = real?.pricePerLiter ?? FUEL_PRICE[v.fuel] ?? FUEL_PRICE["Benzină"];
   const costYear = (kmAn * cons) / 100 * price;
-  return { kmAn, cons, real, costYear, costMonth: costYear / 12, unit: v.fuel === "Electric" ? "kWh" : "L" };
+  return { kmAn, cons, real: !!real, price, costYear, costMonth: costYear / 12, unit: v.fuel === "Electric" ? "kWh" : "L" };
+}
+
+/* ---------- formulare ---------- */
+const filled = (x) => x != null && String(x).trim() !== "";
+export const numOrNull = (x) => (filled(x) && Number.isFinite(+x) ? +x : null);
+export const pricePerLiter = (cost, liters) => (+cost > 0 && +liters > 0 ? +cost / +liters : null);
+
+export function dateError(ds, today = todayStr()) {
+  if (!filled(ds) || !DATE_RE.test(ds)) return "Alege data";
+  return ds > today ? "Data nu poate fi în viitor" : null;
+}
+export function kmError(km, { required = false } = {}) {
+  if (!filled(km)) return required ? "Introdu kilometrajul" : null;
+  return Number.isFinite(+km) && +km >= 0 ? null : "Kilometrajul trebuie să fie un număr pozitiv";
+}
+export function amountError(cost, { required = false } = {}) {
+  if (!filled(cost)) return required ? "Introdu suma" : null;
+  if (!Number.isFinite(+cost) || +cost < 0) return "Suma trebuie să fie un număr pozitiv";
+  return required && +cost === 0 ? "Introdu suma" : null;
+}
+export function vehicleFormError(f, thisYear = +todayStr().slice(0, 4)) {
+  if (!filled(f.make)) return "Marca este obligatorie";
+  if (!filled(f.plate)) return "Numărul de înmatriculare este obligatoriu";
+  const y = +f.year;
+  if (filled(f.year) && !(Number.isInteger(y) && y >= 1950 && y <= thisYear + 1)) return `Anul trebuie să fie între 1950 și ${thisYear + 1}`;
+  return kmError(f.km);
+}
+export const kmDecrease = (v, km) => v.km != null && numOrNull(km) != null && +km < v.km;
+export const plateMismatch = (found, plate) => {
+  const a = normalizePlate(found), b = normalizePlate(plate);
+  return !!a && !!b && a !== b;
+};
+
+/* ---------- cont ---------- */
+export const loginEmailChanged = (account, email) => !!email.trim() && email.trim().toLowerCase() !== (account.email || "").toLowerCase();
+
+/* e-mailurile pleacă doar când s-au schimbat; primul e-mail de login devine și adresa de remindere.
+   Fără e-mail configurat adresa nu se poate confirma, iar serverul ar refuza toată salvarea — rămâne fără remindere. */
+export function profilePatch(account, f, currentPassword, { mail = true } = {}) {
+  const email = f.email.trim(), reminder = f.reminderEmail.trim();
+  const loginChanged = loginEmailChanged(account, email);
+  const shownReminder = account.pendingReminderEmail || account.reminderEmail || "";
+  const firstAddress = loginChanged && !shownReminder;
+  const reminderEmail = reminder !== shownReminder ? reminder : firstAddress ? (mail ? email : "") : undefined;
+  return {
+    kind: f.kind,
+    name: f.kind === "company" ? f.companyName || f.name : f.name,
+    currency: f.currency,
+    company: f.kind === "company" ? { name: f.companyName, cui: f.cui, regCom: f.regCom, address: f.address } : null,
+    rcaBrokerUrl: f.rcaBrokerUrl.trim() || null,
+    ...(reminderEmail !== undefined ? { reminderEmail } : {}),
+    ...(loginChanged ? { email, currentPassword } : {}),
+  };
+}
+
+/* adresa care așteaptă linkul de confirmare; fără e-mail configurat nu s-a trimis nimic */
+export function reminderNotice(account, mail) {
+  const at = account.pendingReminderEmail || (account.reminderVerified === false ? account.reminderEmail : null);
+  if (!mail || !at) return null;
+  return account.reminderVerified === false || !account.reminderEmail
+    ? `📬 Reminderele pornesc după confirmare: confirmă adresa din e-mailul primit la ${at} (verifică și Spam).`
+    : `⏳ Așteaptă confirmarea din e-mailul trimis la ${at} — până atunci reminderele merg la ${account.reminderEmail}.`;
+}
+
+/* ferestrele de la intrare vin pe rând; o fereastră închide doar dacă e cea afișată, ca un răspuns întârziat să nu sară peste următoarea */
+export function modalQueue(render) {
+  let shown = null, next = [];
+  const show = (m) => { shown = m; render(m); };
+  return {
+    open: show,
+    queue(list) { next = list.filter(Boolean); show(next.shift() || null); },
+    close(m) { if (m === shown) show(next.shift() || null); },
+    clear() { next = []; show(null); },
+  };
+}
+
+/* ---------- documente & service ---------- */
+/* reînnoirea începe a doua zi după expirarea actuală, dar niciodată în trecut */
+export function renewalStart(v, type, today = todayStr()) {
+  const current = latestDocs(v)[type];
+  const dayAfter = current ? addDaysTo(current.expires, 1) : today;
+  return dayAfter > today ? dayAfter : today;
+}
+/* `expires` e ultima zi valabilă: o poliță de 12 luni începută pe 16 nov 2026 ține până pe 15 nov 2027 */
+export function expiryOptions(type, v, from = renewalStart(v, type)) {
+  const months = (n, label, recommended = false) => ({ label, expires: addDaysTo(addMonths(n, from), -1), recommended, months: n });
+  const days = (n, label) => ({ label, expires: addDays(n - 1, from), recommended: false, days: n });
+  if (type === "itp") {
+    const rec = itpMonthsFor(v);
+    return [
+      months(rec.months, `+${rec.label}`, true),
+      ...(rec.months !== 12 ? [months(12, "+1 an")] : []),
+      ...(rec.months !== 24 ? [months(24, "+2 ani")] : []),
+    ];
+  }
+  if (type === "rovinieta") return [days(30, "+30 zile"), days(60, "+60 zile"), months(12, "+12 luni")];
+  if (type === "rca" || type === "casco") return [months(6, "+6 luni"), months(12, "+12 luni")];
+  return [months(12, "+12 luni"), months(24, "+24 luni")];
+}
+
+/* tariful de rovinietă e în lei, pe 12 luni: îl precompletăm doar în conturile în lei */
+export function renewalDefaults(type, v, provider) {
+  if (type !== "rovinieta") return {};
+  const { price } = vignetteQuote(v);
+  const cost = price && currency === "RON" ? String(price) : null;
+  return { ...(cost ? { cost, autoCost: cost } : {}), ...(provider ? {} : { provider: "CNAIR · portal.etoll.ro" }) };
+}
+export function renewalPick(d, option) {
+  const untouched = !!d.autoCost && (!d.cost || d.cost === d.autoCost);
+  return { expires: option.expires, ...(untouched ? { cost: option.months === 12 ? d.autoCost : "" } : {}) };
+}
+
+export function docRows(v) {
+  const docs = latestDocs(v);
+  const required = requiredDocs(v);
+  return [...new Set([...required, ...Object.keys(docs), "casco"])]
+    .filter((t) => Object.hasOwn(DOC_TYPES, t))
+    .map((type) => {
+      const doc = docs[type] || null;
+      const dl = doc ? daysLeft(doc.expires) : null;
+      const isRequired = required.includes(type);
+      return { type, doc, daysLeft: dl, required: isRequired, status: doc ? dayStatus(dl) : isRequired ? "missing" : "none" };
+    });
+}
+
+/* după un service scriem mereu ambele ținte, ca un termen vechi depășit să nu rămână agățat */
+export function nextServiceTargets({ km, date, kmInterval, months }) {
+  const base = numOrNull(km), everyKm = numOrNull(kmInterval), everyMonths = numOrNull(months);
+  return {
+    nextServiceKm: base != null && everyKm > 0 ? Math.round(base + everyKm) : null,
+    nextServiceDate: filled(date) && DATE_RE.test(date) && everyMonths > 0 ? addMonths(Math.round(everyMonths), date) : null,
+  };
+}
+
+/* un service trecut în istoric după unul mai recent nu mută ținta */
+export const lastServiceDate = (v) =>
+  (v.events || []).filter((e) => e.kind === "maintenance" && e.type === "service" && e.date).reduce((last, e) => (last && last > e.date ? last : e.date), null);
+export function isLatestService(v, date) {
+  const last = lastServiceDate(v);
+  return !last || !filled(date) || date >= last;
+}
+
+/* ---------- istoric ---------- */
+const LUNI_LUNGI = ["ianuarie", "februarie", "martie", "aprilie", "mai", "iunie", "iulie", "august", "septembrie", "octombrie", "noiembrie", "decembrie"];
+export function monthLabel(key, today = todayStr()) {
+  const name = LUNI_LUNGI[+String(key).slice(5, 7) - 1];
+  if (!name) return "Fără dată";
+  const label = name[0].toUpperCase() + name.slice(1);
+  return key.slice(0, 4) === today.slice(0, 4) ? label : `${label} ${key.slice(0, 4)}`;
+}
+export const sortedEvents = (v) =>
+  [...(v.events || [])].sort((a, b) => (b.date || "").localeCompare(a.date || "") || (b.created || "").localeCompare(a.created || ""));
+
+export function historyPage(v, limit = 50, today = todayStr()) {
+  const all = sortedEvents(v);
+  const groups = [];
+  all.forEach((e, idx) => {
+    const key = monthKey(e.date || "");
+    let g = groups[groups.length - 1];
+    if (!g || g.key !== key) groups.push((g = { key, label: monthLabel(key, today), total: 0, count: 0, items: [] }));
+    if (+e.cost > 0) g.total += +e.cost;
+    g.count++;
+    if (idx < limit) g.items.push(e);
+  });
+  return { groups: groups.filter((g) => g.items.length), total: all.length, hidden: Math.max(0, all.length - limit) };
+}
+
+/* ---------- garaj: căutare, filtre, sortare ---------- */
+const fold = (s) => String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+export function matchesQuery(v, q) {
+  const terms = fold(q).split(/\s+/).filter(Boolean);
+  if (!terms.length) return true;
+  const hay = fold([v.plate, normalizePlate(v.plate), v.make, v.model, v.driver].join(" "));
+  const plate = normalizePlate(v.plate);
+  return terms.every((t) => hay.includes(t) || (!!normalizePlate(t) && plate.includes(normalizePlate(t))));
+}
+
+export function vehicleSummary(v) {
+  const items = healthItems(v);
+  const attention = items.filter((i) => ATT.includes(i.status));
+  const missing = items.filter((i) => i.status === "missing");
+  return { v, attention, missing, status: worst(...attention.map((i) => i.status), "ok") };
+}
+
+const byName = (a, b) => vehicleName(a.v).localeCompare(vehicleName(b.v), "ro") || String(a.v.plate || "").localeCompare(String(b.v.plate || ""), "ro");
+const SORTS = {
+  stare: (a, b) => WORST[b.status] - WORST[a.status] || b.attention.length - a.attention.length || b.missing.length - a.missing.length || byName(a, b),
+  nume: byName,
+  km: (a, b) => (b.v.km ?? -1) - (a.v.km ?? -1) || byName(a, b),
+};
+export const GARAGE_SORTS = { stare: "Stare", nume: "Nume", km: "Kilometraj" };
+
+const FILTERS = { all: () => true, attention: (r) => r.attention.length > 0, missing: (r) => r.missing.length > 0 };
+const passes = (r, filter) => (filter.startsWith("cat:") ? r.v.category === filter.slice(4) : (FILTERS[filter] || FILTERS.all)(r));
+
+export function garageFilters(rows) {
+  const cats = Object.keys(CATEGORIES).filter((c) => rows.some((r) => r.v.category === c));
+  const list = [["all", "Toate"], ["attention", "Necesită atenție"], ["missing", "Lipsesc documente"], ...(cats.length > 1 ? cats.map((c) => [`cat:${c}`, CATEGORIES[c]]) : [])];
+  return list.map(([id, label]) => ({ id, label, count: rows.filter((r) => passes(r, id)).length }));
+}
+export function garageView(vehicles, { q = "", filter = "all", sort = "stare" } = {}) {
+  const rows = vehicles.map(vehicleSummary);
+  const filters = garageFilters(rows);
+  const active = filters.some((f) => f.id === filter) ? filter : "all";
+  return { filters, filter: active, rows: rows.filter((r) => passes(r, active) && matchesQuery(r.v, q)).sort(SORTS[sort] || SORTS.stare) };
+}
+
+/* ---------- banda de alerte ---------- */
+const ALERT_GROUPS = [
+  ["dead",        (n) => `${n} ${n === 1 ? "expirat" : "expirate"}`],
+  ["serviceLate", (n) => (n === 1 ? "1 service depășit" : `${n} service-uri depășite`)],
+  ["crit",        (n) => `${n} în ≤5 zile`],
+  ["orange",      (n) => `${n} în ≤15 zile`],
+  ["warn",        (n) => `${n} în ≤30 zile`],
+  ["serviceKm",   (n) => (n === 1 ? "1 service în curând" : `${n} service-uri în curând`)],
+  ["check",       (n) => `${n} de verificat`],
+];
+const dueByKm = (a) => a.kmLeft != null && WORST[kmStatus(a.kmLeft)] >= WORST[a.daysLeft == null ? "none" : dayStatus(a.daysLeft)];
+function alertGroup(a) {
+  if (a.kind === "tyres") return "check";
+  if (a.kind !== "service") return a.st;
+  if (a.st === "dead") return "serviceLate";
+  return dueByKm(a) ? "serviceKm" : a.st;
+}
+export function alertSummary(alerts) {
+  const groups = {};
+  for (const a of alerts) {
+    const g = (groups[alertGroup(a)] ||= { n: 0, st: "none" });
+    g.n++;
+    g.st = worst(g.st, a.st);
+  }
+  return ALERT_GROUPS.filter(([k]) => groups[k]).map(([k, text]) => ({ st: groups[k].st, text: text(groups[k].n) }));
 }
 
 /* ---------- mașină demo ---------- */
 export function demoVehicle() {
-  const iso = (d) => { const x = new Date(); x.setDate(x.getDate() + d); return x.toISOString().slice(0, 10); };
-  const uid = () => crypto.randomUUID();
+  const iso = (d) => addDays(d);
   return {
-    make: "BMW", model: "X5", plate: "B 45 FLT", year: "2021", fuel: "Motorină",
-    vin: "WBACV410X09B12345", km: 42380, kmUpdatedAt: new Date().toISOString(),
+    make: "Dacia", model: "Duster", plate: "B 45 FLT", year: "2021", fuel: "Motorină", category: "autoturism", driver: "Andrei",
+    vin: "UU1HSDADG12345678", km: 42380,
     nextServiceKm: 44700, nextServiceDate: iso(160), tyres: "good", tyresNote: "set de vară",
     documents: [
-      { id: uid(), type: "itp", expires: iso(143) },
-      { id: uid(), type: "rca", expires: iso(68), provider: "Allianz" },
-      { id: uid(), type: "rovinieta", expires: iso(27) },
-      { id: uid(), type: "casco", expires: iso(12), provider: "Groupama" },
+      { type: "itp", expires: iso(143) },
+      { type: "rca", expires: iso(68), provider: "Allianz" },
+      { type: "rovinieta", expires: iso(27) },
+      { type: "casco", expires: iso(12), provider: "Groupama" },
     ],
     events: [
-      { id: uid(), kind: "document", type: "rca", title: "RCA reînnoit", cost: 840, date: iso(0), note: "Allianz" },
-      { id: uid(), kind: "expense", label: "Spălătorie", cost: 12, date: iso(-8) },
-      { id: uid(), kind: "maintenance", type: "service", cost: 420, km: 41800, date: iso(-13), note: "ulei + filtre" },
-      { id: uid(), kind: "fuel", cost: 91, liters: 58, km: 41560, date: iso(-26) },
-      { id: uid(), kind: "maintenance", type: "tyres", cost: 780, km: 41200, date: iso(-40), note: "perechea din față" },
-      { id: uid(), kind: "fuel", cost: 87, liters: 55, km: 40890, date: iso(-52) },
-      { id: uid(), kind: "document", type: "itp", title: "ITP trecut", date: iso(-77) },
-    ].map((e) => ({ created: new Date().toISOString(), ...e })),
+      { kind: "document", type: "rca", title: "RCA reînnoit", cost: 1450, date: iso(0), note: "Allianz" },
+      { kind: "expense", label: "Spălătorie", cost: 60, date: iso(-8) },
+      { kind: "maintenance", type: "service", cost: 1100, km: 41800, date: iso(-13), note: "ulei + filtre" },
+      { kind: "fuel", cost: 420, liters: 55, km: 41560, date: iso(-26) },
+      { kind: "maintenance", type: "tyres", cost: 1900, km: 41200, date: iso(-40), note: "perechea din față" },
+      { kind: "fuel", cost: 405, liters: 53, km: 40890, date: iso(-52) },
+      { kind: "document", type: "itp", title: "ITP trecut", cost: 150, date: iso(-77) },
+    ],
   };
 }
