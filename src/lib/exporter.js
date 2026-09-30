@@ -22,6 +22,7 @@ const TEMPLATE_COLUMNS = [
   { header: "Șofer", width: 16, get: (v) => v.driver },
   { header: "VIN", width: 20, get: (v) => v.vin },
   { header: "Serie CIV", width: 12, get: (v) => v.civ },
+  { header: "Data primei înmatriculări", width: 16, date: true, get: (v) => v.firstRegistration },
   { header: "RCA expiră", width: 12, date: true, get: docDate("rca") },
   provider("rca"),
   { header: "CASCO expiră", width: 12, date: true, get: docDate("casco") },

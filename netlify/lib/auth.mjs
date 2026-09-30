@@ -1,5 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import { normalizeEmail, normalizeLegacyUser, DEFAULT_CURRENCY, ACCOUNT_KINDS, CURRENCIES } from "../../shared/domain.js";
+import { normalizeEmail, normalizeLegacyUser, DEFAULT_CURRENCY, ACCOUNT_KINDS, CURRENCIES, FUELS } from "../../shared/domain.js";
 import { safeHttpsUrl } from "../../shared/renewals.js";
 import { fail, parseCookies } from "./http.mjs";
 import { consume, release, hashKey } from "./limits.mjs";
@@ -76,6 +76,7 @@ export const publicAccount = (a) => ({
   pendingReminderEmail: a.pendingReminderEmail || null,
   legacyUser: a.legacyUser || null,
   rcaBrokerUrl: a.rcaBrokerUrl || null,
+  fuelPrices: a.fuelPrices || null,
   mustChangePassword: !!a.mustChangePassword,
   createdAt: a.createdAt,
 });
@@ -157,6 +158,16 @@ export function profileChanges(body) {
   if ("currency" in body && CURRENCIES[body.currency]) out.currency = body.currency;
   if ("company" in body) out.company = sanitizeCompany(body.company);
   if ("rcaBrokerUrl" in body) out.rcaBrokerUrl = body.rcaBrokerUrl ? safeHttpsUrl(body.rcaBrokerUrl) || fail(400, "linkul brokerului trebuie să înceapă cu https://") : null;
+  if ("fuelPrices" in body) {
+    const prices = {};
+    for (const [fuel, val] of Object.entries(body.fuelPrices || {})) {
+      if (!FUELS.includes(fuel) || val == null || val === "") continue;
+      const n = +String(val).replace(",", ".");
+      if (!(n > 0 && n < 100)) fail(400, `prețul pentru ${fuel} nu este valid`);
+      prices[fuel] = Math.round(n * 100) / 100;
+    }
+    out.fuelPrices = Object.keys(prices).length ? prices : null;
+  }
   if ("reminderEmail" in body && body.reminderEmail != null && body.reminderEmail !== "" && !normalizeEmail(body.reminderEmail)) fail(400, "adresă de e-mail invalidă pentru remindere");
   if ("email" in body && body.email != null && !normalizeEmail(body.email)) fail(400, "adresă de e-mail invalidă");
   return out;

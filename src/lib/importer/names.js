@@ -59,7 +59,7 @@ for (const [brand, list] of Object.entries(MODELS)) {
 
 /* cuvinte care descriu vehiculul fără să-i dea marca */
 const KINDS = [
-  [/^rulot/, "Rulotă", "remorca"], [/^semiremorc/, "Semiremorcă", "remorca"], [/^remorc/, "Remorcă", "remorca"],
+  [/^rulot/, "Rulotă", "rulota"], [/^semiremorc/, "Semiremorcă", "remorca"], [/^remorc/, "Remorcă", "remorca"],
   [/^(auto)?utilitar/, "Utilitară", "utilitara"], [/^(duba|autoduba|furgon|microbuz)$/, "Utilitară", "utilitara"],
   [/^(auto)?camion$|^basculant/, "Camion", "camion"], [/^(motociclet|moto$|scuter|atv$)/, "Motocicletă", "moto"],
 ];

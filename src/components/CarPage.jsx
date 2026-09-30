@@ -91,6 +91,7 @@ function Health({ v, open }) {
 
 /* ---------- Documente ---------- */
 function docState(r) {
+  if (!r.doc && r.notYet) return `Nu e necesar încă · prima ITP până la ${fmtDate(r.notYet.dueBy)}${r.notYet.estimated ? " (estimat)" : ""}`;
   if (!r.doc) return r.required ? "Obligatoriu · lipsește" : "Neadăugat încă";
   if (r.daysLeft < 0) return `Expirat acum ${zile(r.daysLeft)}`;
   return r.daysLeft === 0 ? "Expiră azi" : `Activ · încă ${zile(r.daysLeft)}`;

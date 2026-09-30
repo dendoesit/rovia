@@ -38,6 +38,7 @@ export const FIELDS = {
   euroClass:       { group: "Mașină", label: "Clasa Euro", match: [["euro"], ["clasa", "euro"], ["norma", "euro"], ["norma", "poluare"], ["poluare"]] },
   vignetteCategory:{ group: "Mașină", label: "Categorie rovinietă", match: [["categor", "rovinie"], ["categor", "vignet"], ["rovinie", "categor"], ["vignet", "categor"]] },
   civ:             { group: "Mașină", label: "Serie CIV", match: [["civ"], ["serie", "civ"], ["carte", "identitate"]] },
+  firstRegistration: { group: "Mașină", label: "Data primei înmatriculări", match: [["data", "inmatr"], ["prima", "inmatr"], ["data", "prima", "inmatr"], ["first", "registration"], ["registration", "date"]] },
 };
 
 /* „RCA furnizor", „Asigurator CASCO": aceleași cuvinte ca documentul + un cuvânt de firmă */
@@ -49,7 +50,7 @@ for (const [type, field] of Object.entries(PROVIDER_FIELDS)) {
     match: FIELDS[type].match.flatMap((alt) => PROVIDER_WORDS.map((w) => [...alt, w])),
   };
 }
-const IGNORED = [["nr", "crt"], ["crt"], ["nr", "ord"], ["pozitie"], ["index"], ["data", "inmatr"], ["telefon"], ["tel"], ["phone"], ["email"], ["mail"]];
+const IGNORED = [["nr", "crt"], ["crt"], ["nr", "ord"], ["pozitie"], ["index"], ["telefon"], ["tel"], ["phone"], ["email"], ["mail"]];
 
 export const headerTokens = (text) =>
   fold(text).replace(/([a-z])-\s*(?:\/\s*)?([a-z])/g, "$1$2").split(/[^a-z0-9]+/).filter(Boolean);

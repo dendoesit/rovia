@@ -4,7 +4,7 @@ import {
   todayStr, fmtKm, fmtQty, fmtMoney, fmtDate, daysLeft, zile, currencySymbol, currencyCode,
   eventTitle, eventIcon, latestDocs, serviceIntervalFor, addMonths,
   numOrNull, pricePerLiter, dateError, kmError, amountError, vehicleFormError, kmDecrease, plateMismatch,
-  expiryOptions, renewalStart, renewalDefaults, renewalPick, nextServiceTargets, isLatestService, lastServiceDate,
+  expiryOptions, renewalStart, USAGES, renewalDefaults, renewalPick, nextServiceTargets, isLatestService, lastServiceDate,
 } from "../lib/model";
 import { scanDocument, vehiclesApi } from "../lib/api";
 import { ModalShell, Field, readPhoto } from "./ui";
@@ -608,6 +608,7 @@ function VehicleModal({ v, actions }) {
     fuel: v ? v.fuel ?? "" : FUELS[0], category: v ? v.category ?? "" : "autoturism",
     km: v?.km != null ? String(v.km) : "", driver: v?.driver ?? "", vin: v?.vin ?? "",
     notes: v?.notes ?? "", euroClass: v?.euroClass ?? "", vignetteCategory: v?.vignetteCategory ?? "", civ: v?.civ ?? "",
+    usage: v?.usage ?? "", firstRegistration: v?.firstRegistration ?? "", newAtRegistration: v?.newAtRegistration !== false,
   }));
   const [f, setF] = useState(start);
   const [error, setError] = useState(null);
@@ -625,6 +626,7 @@ function VehicleModal({ v, actions }) {
       year: String(f.year).trim() || null, fuel: f.fuel || null, category: f.category || null,
       driver: f.driver.trim() || null, vin: f.vin.trim().toUpperCase() || null,
       notes: f.notes.trim() || null, euroClass: f.euroClass || null, vignetteCategory: f.vignetteCategory || null, civ: f.civ.trim().toUpperCase() || null,
+      usage: f.category === "autoturism" || !f.category ? f.usage || null : null, firstRegistration: f.firstRegistration || null, newAtRegistration: !!f.newAtRegistration,
     };
     const km = numOrNull(f.km);
     setBusy(true);
@@ -678,6 +680,27 @@ function VehicleModal({ v, actions }) {
             <Field label="Șofer (opțional)"><input placeholder="Andrei" autoComplete="off" value={f.driver} onChange={set("driver")} /></Field>
           </div>
           <Field label="VIN (opțional)"><input placeholder="WBA…" autoComplete="off" maxLength={17} value={f.vin} onChange={set("vin")} /></Field>
+          <details className="form-more" open={!!(f.firstRegistration || f.usage || !f.newAtRegistration)}>
+            <summary>ITP: înmatriculare și utilizare (opțional)</summary>
+            <div className="row2">
+              <Field label="Data primei înmatriculări în RO" hint={f.firstRegistration ? null : "fără ea, prima ITP se estimează din anul fabricației"}>
+                <DateInput value={f.firstRegistration} onChange={(firstRegistration) => setValue("firstRegistration", firstRegistration)} />
+              </Field>
+              {(f.category === "autoturism" || !f.category) && (
+                <Field label="Utilizare">
+                  <select value={f.usage} onChange={set("usage")}>
+                    <option value="">Personal / firmă</option>
+                    {Object.entries(USAGES).filter(([k]) => k !== "standard").map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                  </select>
+                </Field>
+              )}
+            </div>
+            <label className="check">
+              <input type="checkbox" checked={f.newAtRegistration} onChange={(e) => setValue("newAtRegistration", e.target.checked)} />
+              Era nouă la prima înmatriculare în România
+            </label>
+            <div className="hint">Mașinile noi fac prima ITP mai târziu (autoturism: la 3 ani, utilitară: la 2 ani). Importurile second-hand fac ITP de la înmatriculare.</div>
+          </details>
           <details className="form-more" open={!!(f.euroClass || f.vignetteCategory || f.civ)}>
             <summary>Rovinietă & RCA (opțional)</summary>
             <div className="row2">

@@ -91,7 +91,7 @@ export function buildVehicle(cells, columns, { today = bucharestToday() } = {}) 
     driver: filled(first("driver")) ? smartCase(first("driver")) : fromName.driver,
     year: null, fuel: null, category: null, vin: null, km: null,
     nextServiceKm: null, nextServiceDate: null, tyres: null, tyresNote: null, notes: null,
-    euroClass: null, vignetteCategory: null, civ: null,
+    euroClass: null, vignetteCategory: null, civ: null, firstRegistration: null,
     documents: [], events: [],
   };
 
@@ -121,6 +121,12 @@ export function buildVehicle(cells, columns, { today = bucharestToday() } = {}) 
   if (filled(first("civ"))) {
     v.civ = clean(first("civ")).toUpperCase();
     if (v.civ.length > 20) warnings.push(`seria CIV „${v.civ}” are peste 20 de caractere — verifică-o după import`);
+  }
+
+  for (const { value, order } of entries("firstRegistration")) {
+    const d = typeof value === "string" ? parseDate(value, today, order) : null;
+    if (d?.iso && !v.firstRegistration) { v.firstRegistration = d.iso; warnings.push(...dateNotes(d).map((w) => `Prima înmatriculare: ${w}`)); }
+    else if (!d?.iso && filled(value)) warnings.push(`data primei înmatriculări „${clean(value)}” nu e o dată completă`);
   }
 
   for (const type of Object.keys(DOC_TYPES)) {
@@ -197,7 +203,7 @@ export function buildVehicle(cells, columns, { today = bucharestToday() } = {}) 
   }
 
   v.notes = [fromName.note, ...values("notes").map(clean)].filter(Boolean).join("; ") || null;
-  if (!v.model && v.make && v.category !== "remorca") warnings.push(NO_MODEL);
+  if (!v.model && v.make && v.category !== "remorca" && v.category !== "rulota") warnings.push(NO_MODEL);
 
   return { vehicle: v, warnings, missing: missingOf(v) };
 }

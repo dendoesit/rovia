@@ -226,7 +226,7 @@ test("vehicle names are split into brand, model, driver and notes", () => {
   assert.deepEqual(pick("SANDERO  / ION VASILE"), ["Dacia", "Sandero", "Ion Vasile", null, null]);
   assert.deepEqual(pick("VW POLO"), ["Volkswagen", "Polo", null, null, null]);
   assert.deepEqual(pick("MERCEDES NOU"), ["Mercedes", null, null, "nou", null]);
-  assert.deepEqual(pick("RULOTA"), ["Rulotă", null, null, null, "remorca"]);
+  assert.deepEqual(pick("RULOTA"), ["Rulotă", null, null, null, "rulota"]);
   assert.deepEqual(pick("Remorca Brenderup"), ["Brenderup", null, null, null, "remorca"]);
   assert.deepEqual(pick("SPRINTER"), ["Mercedes", "Sprinter", null, null, "utilitara"]);
   assert.deepEqual(pick("FORD TRANSIT CUSTOM (POPESCU ION)"), ["Ford", "Transit Custom", "Popescu Ion", null, "utilitara"]);
@@ -271,7 +271,7 @@ test("rows without make or plate are flagged, lone years and missing models warn
   assert.ok(r.warnings.some((w) => /ITP: „2028” e doar un an/.test(w)));
   assert.ok(r.warnings.some((w) => /modelul lipsește/.test(w)));
   const trailer = vehicleFrom(WORD_HEADERS, ["RULOTA", "B 88 TST", "", "", "", "", "04.05.22"]);
-  assert.equal(trailer.vehicle.category, "remorca");
+  assert.equal(trailer.vehicle.category, "rulota");
   assert.ok(!trailer.warnings.some((w) => /modelul/.test(w)));
 });
 
@@ -504,7 +504,7 @@ test("„noi” (new) before a year is not read as November", () => {
 
 test("registration dates, phone and e-mail columns do not become plate or driver", () => {
   const cases = {
-    "Data înmatriculării": false, "Telefon șofer": false, "Tel.": false, "E-mail": false, "Număr de telefon": false,
+    "Data înmatriculării": "firstRegistration", "Data primei înmatriculări": "firstRegistration", "Telefon șofer": false, "Tel.": false, "E-mail": false, "Număr de telefon": false,
     "Număr auto": "plate", "Număr mașină": "plate", "Model auto": "model", "Marca auto": "make",
     "Kilometraj la ultima revizie": "serviceKm", "Kilometraj următoarea revizie": "nextServiceKm",
   };

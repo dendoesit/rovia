@@ -37,7 +37,8 @@ export function euroClassFor(v) {
 
 export function vignetteCategoryFor(v) {
   if (v.vignetteCategory && VIGNETTE_CATEGORIES[v.vignetteCategory]) return v.vignetteCategory;
-  if (v.category === "remorca" || v.category === "moto") return "none";
+  if (v.category === "remorca" || v.category === "rulota" || v.category === "moto") return "none";
+  if (v.category === "microbuz") return "C";
   if (v.category === "camion") return "tollro";
   if (v.category === "utilitara") return "B";
   return "A";

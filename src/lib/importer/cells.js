@@ -233,15 +233,20 @@ export function parseFuel(value) {
 export const fuelHint = (text) => FUEL_WORDS.find(([, re]) => re.test(fold(text)))?.[0] || null;
 
 const CATEGORY_WORDS = [
-  ["remorca", /remorc|rulot|trailer|semiremorc/],
+  ["rulota", /rulot|caravan/],
+  ["remorca", /remorc|trailer|semiremorc/],
   ["moto", /moto|scuter|atv/],
-  ["camion", /camion|truck|tir\b|cap tractor|basculant|autobuz/],
-  ["utilitara", /utilitar|\bvan\b|duba|furgon|microbuz|autoutilitar/],
+  ["microbuz", /microbuz|autocar|autobuz|minibus/],
+  ["camion", /camion|truck|tir\b|cap tractor|basculant/],
+  ["utilitara", /utilitar|\bvan\b|duba|furgon|autoutilitar/],
   ["autoturism", /autoturism|turism|\bcar\b|\bauto\b|masina|sedan|break|suv/],
 ];
+/* eticheta veche „Remorcă / rulotă” (exporturi dinainte de categoria separată de rulotă) rămâne remorcă */
+const CATEGORY_ALIASES = { "remorca / rulota": "remorca" };
 export function parseCategory(value) {
   const f = fold(value).trim();
   if (!f) return null;
+  if (CATEGORY_ALIASES[f]) return CATEGORY_ALIASES[f];
   return Object.keys(CATEGORIES).find((k) => k === f || fold(CATEGORIES[k]) === f) || CATEGORY_WORDS.find(([, re]) => re.test(f))?.[0] || null;
 }
 

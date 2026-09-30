@@ -1,4 +1,5 @@
 import { EURO_CLASSES, VIGNETTE_CATEGORIES } from "./renewals.js";
+import { USAGES } from "./itp.js";
 
 export const DOC_TYPES = {
   itp:       { label: "ITP",       icon: "🔍" },
@@ -27,7 +28,9 @@ export const CATEGORIES = {
   autoturism: "Autoturism",
   utilitara:  "Utilitară",
   camion:     "Camion",
-  remorca:    "Remorcă / rulotă",
+  microbuz:   "Microbuz / autocar",
+  remorca:    "Remorcă",
+  rulota:     "Rulotă tractată",
   moto:       "Motocicletă",
 };
 
@@ -35,9 +38,13 @@ export const EVENT_KINDS = ["fuel", "maintenance", "expense", "document", "odome
 
 export const ACCOUNT_KINDS = { personal: "Personal", company: "Firmă" };
 
+/* medii naționale la pompă, cu TVA, 30.09.2026 (Monitorul Prețurilor ANPC via pretcarburant.ro; confirmate de EC Weekly Oil Bulletin);
+   electric = amestec de încărcare acasă (~1,30 lei/kWh) și publică (AC ~2,00, DC ~2,50); EUR la cursul BNR 5,2785 */
+export const FUEL_PRICES_AS_OF = "30.09.2026";
+export const FUEL_PRICES_SOURCE = "media națională la pompă (Monitorul Prețurilor ANPC)";
 export const CURRENCIES = {
-  RON: { symbol: "lei", fuelPrice: { "Benzină": 7.6, "Motorină": 7.8, "GPL": 3.9, "Hibrid": 7.6, "Hibrid plug-in": 7.6, "Electric": 1.4 } },
-  EUR: { symbol: "€",   fuelPrice: { "Benzină": 1.5, "Motorină": 1.55, "GPL": 0.78, "Hibrid": 1.5, "Hibrid plug-in": 1.5, "Electric": 0.28 } },
+  RON: { symbol: "lei", fuelPrice: { "Benzină": 10.03, "Motorină": 10.95, "GPL": 4.71, "Hibrid": 10.03, "Hibrid plug-in": 10.03, "Electric": 1.8 } },
+  EUR: { symbol: "€",   fuelPrice: { "Benzină": 1.9, "Motorină": 2.07, "GPL": 0.89, "Hibrid": 1.9, "Hibrid plug-in": 1.9, "Electric": 0.34 } },
 };
 export const DEFAULT_CURRENCY = "RON";
 
@@ -47,6 +54,7 @@ export const VEHICLE_FIELDS = [
   "make", "model", "plate", "year", "fuel", "category", "driver", "vin",
   "km", "kmUpdatedAt", "tyres", "tyresNote", "nextServiceKm", "nextServiceDate", "notes",
   "euroClass", "vignetteCategory", "civ",
+  "firstRegistration", "newAtRegistration", "usage",
 ];
 
 export class ValidationError extends Error {
@@ -104,6 +112,9 @@ export function sanitizeVehicleFields(src) {
     else if (k === "euroClass") out[k] = EURO_CLASSES[val] ? val : null;
     else if (k === "vignetteCategory") out[k] = VIGNETTE_CATEGORIES[val] ? val : null;
     else if (k === "civ") out[k] = toText(val, 20)?.toUpperCase() ?? null;
+    else if (k === "firstRegistration") out[k] = typeof val === "string" && DATE_RE.test(val) ? val : null;
+    else if (k === "newAtRegistration") out[k] = val === true || val === false ? val : null;
+    else if (k === "usage") out[k] = USAGES[val] ? val : null;
     else out[k] = toText(val, 120);
   }
   return out;

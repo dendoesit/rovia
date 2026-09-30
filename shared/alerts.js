@@ -1,5 +1,6 @@
 import { DOC_TYPES, CORE_DOCS } from "./domain.js";
 import { daysLeft, bucharestToday } from "./dates.js";
+import { itpRequirement } from "./itp.js";
 
 /* galben ≤30 zile → portocaliu ≤15 → roșu ≤5 → expirat */
 export function dayStatus(d) {
@@ -31,8 +32,13 @@ export function latestDocs(v) {
   return out;
 }
 
-export const isTrailer = (v) => v.category === "remorca";
-export const requiredDocs = (v) => (isTrailer(v) ? ["itp", "rca"] : CORE_DOCS);
+export const isTrailer = (v) => v.category === "remorca" || v.category === "rulota";
+/* ITP-ul nu e cerut încă la vehiculele noi până la termenul primei inspecții */
+export function requiredDocs(v, today = bucharestToday()) {
+  const base = isTrailer(v) ? ["itp", "rca"] : CORE_DOCS;
+  const hasItp = !!latestDocs(v).itp;
+  return itpRequirement(v, hasItp, today).required ? base : base.filter((t) => t !== "itp");
+}
 
 export function serviceStatus(v, today = bucharestToday()) {
   const kmLeft = v.nextServiceKm && v.km ? v.nextServiceKm - v.km : null;
@@ -57,6 +63,13 @@ export function vehicleAlerts(v, today = bucharestToday()) {
     const label = DOC_TYPES[t].label;
     out.push({ st, sort: dl, vid: v.id, car, plate: v.plate, kind: "doc", type: t, daysLeft: dl,
       msg: dl < 0 ? `${label} a expirat acum ${zile(dl)}` : dl === 0 ? `${label} expiră AZI` : `${label} expiră în ${zile(dl)}` });
+  }
+  if (!docs.itp) {
+    const req = itpRequirement(v, false, today);
+    const st = req.required ? "none" : dayStatus(req.daysLeft);
+    if (!req.required && ATT.includes(st))
+      out.push({ st, sort: req.daysLeft, vid: v.id, car, plate: v.plate, kind: "doc", type: "itp", daysLeft: req.daysLeft,
+        msg: req.daysLeft === 0 ? "prima ITP trebuie făcută AZI" : `prima ITP trebuie făcută în ${zile(req.daysLeft)}` });
   }
   const s = serviceStatus(v, today);
   if (ATT.includes(s.status)) {

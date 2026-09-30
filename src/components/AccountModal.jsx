@@ -1,6 +1,9 @@
 import { useState } from "react";
+import { FUEL_PRICES_AS_OF, FUEL_PRICES_SOURCE } from "../../shared/domain.js";
+
+const FUEL_FIELDS = ["Benzină", "Motorină", "GPL", "Electric"];
 import { accountApi } from "../lib/api";
-import { profilePatch, loginEmailChanged, reminderNotice } from "../lib/model";
+import { profilePatch, loginEmailChanged, reminderNotice, currencySymbol, referenceFuelPrice } from "../lib/model";
 import { ModalShell, Field } from "./ui";
 
 const REASONS = {
@@ -26,6 +29,7 @@ export default function AccountModal({ account, features, actions, reason, known
     regCom: account.company?.regCom || "",
     address: account.company?.address || "",
     rcaBrokerUrl: account.rcaBrokerUrl || "",
+    fuelPrices: Object.fromEntries(FUEL_FIELDS.map((k) => [k, account.fuelPrices?.[k] != null ? String(account.fuelPrices[k]) : ""])),
     currentPassword: "",
   });
   const [pw, setPw] = useState(NO_PASSWORDS);
@@ -123,6 +127,18 @@ export default function AccountModal({ account, features, actions, reason, known
           <Field label="E-mail pentru remindere (ITP, RCA, rovinietă, service)">
             <input type="email" value={f.reminderEmail} onChange={set("reminderEmail")} placeholder={f.email || "flota@firma.ro"} />
           </Field>
+          <details className="form-more" open={FUEL_FIELDS.some((k) => f.fuelPrices[k])}>
+            <summary>Prețuri combustibil pentru estimări (opțional)</summary>
+            <div className="row2">
+              {FUEL_FIELDS.map((k) => (
+                <Field key={k} label={`${k} (${currencySymbol()}/${k === "Electric" ? "kWh" : "L"})`}>
+                  <input inputMode="decimal" placeholder={String(referenceFuelPrice(k)).replace(".", ",")} value={f.fuelPrices[k]}
+                    onChange={(e) => setF({ ...f, fuelPrices: { ...f.fuelPrices, [k]: e.target.value } })} />
+                </Field>
+              ))}
+            </div>
+            <div className="hint">Gol = media națională la pompă din {FUEL_PRICES_AS_OF} ({FUEL_PRICES_SOURCE}). Pune prețul plătit de firmă dacă ai card de flotă sau discount. Consumul real din alimentări are oricum prioritate.</div>
+          </details>
           <Field label="Link broker RCA (opțional)" hint="Butonul „Deschide brokerul” din reînnoirea RCA duce aici.">
             <input type="url" inputMode="url" value={f.rcaBrokerUrl} onChange={set("rcaBrokerUrl")} placeholder="https://brokerul-tau.ro/rca" />
           </Field>

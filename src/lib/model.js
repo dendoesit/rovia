@@ -2,8 +2,10 @@
 import { DOC_TYPES, CORE_DOCS, MAINT_TYPES, FUELS, CATEGORIES, CURRENCIES, DEFAULT_CURRENCY, FUEL_CONSUMPTION, DATE_RE, normalizePlate } from "../../shared/domain.js";
 import { bucharestToday, daysLeft as daysLeftFrom, addDaysTo, addMonthsTo, daysBetween, monthKey } from "../../shared/dates.js";
 import { dayStatus, kmStatus, WORST, worst, ATT, latestDocs, collectAlerts, serviceStatus, requiredDocs, vehicleName, zile, fmtKm } from "../../shared/alerts.js";
+import { itpInterval, itpRequirement, firstItpDue, USAGES } from "../../shared/itp.js";
 import { vignetteQuote } from "../../shared/renewals.js";
 
+export { USAGES, itpRequirement, firstItpDue };
 export { DOC_TYPES, CORE_DOCS, MAINT_TYPES, FUELS, CATEGORIES, normalizePlate, dayStatus, kmStatus, WORST, worst, ATT, latestDocs, collectAlerts, requiredDocs, vehicleName, zile, fmtKm };
 export const KIND_ICON = { fuel: "⛽", expense: "💶", document: "📄", odometer: "📍" };
 
@@ -27,7 +29,12 @@ export function fmtMoney(n) {
   return currency === "EUR" ? `€${s}` : `${s} lei`;
 }
 export const fmtQty = (n) => (+n).toLocaleString("ro-RO", { maximumFractionDigits: 2 });
-export const FUEL_PRICE = new Proxy({}, { get: (_, fuel) => CURRENCIES[currency].fuelPrice[fuel] });
+/* prețurile de referință pot fi suprascrise din profil (prețul plătit de firmă), în moneda contului */
+let fuelOverrides = {};
+export const setFuelPrices = (prices) => { fuelOverrides = prices && typeof prices === "object" ? prices : {}; };
+export const referenceFuelPrice = (fuel) => CURRENCIES[currency].fuelPrice[fuel];
+const priceKey = (fuel) => (fuel === "Hibrid" || fuel === "Hibrid plug-in" ? "Benzină" : fuel);
+export const FUEL_PRICE = new Proxy({}, { get: (_, fuel) => (+fuelOverrides[priceKey(fuel)] > 0 ? +fuelOverrides[priceKey(fuel)] : CURRENCIES[currency].fuelPrice[fuel]) });
 export const FUEL_CONS = FUEL_CONSUMPTION;
 
 /* ---------- date (ora României) ---------- */
@@ -73,6 +80,14 @@ export function healthItems(v) {
 
   const docs = latestDocs(v);
   const required = requiredDocs(v);
+  const itp = docs.itp ? null : itpRequirement(v, false, todayStr());
+  if (itp && !itp.required) {
+    items.push({
+      icon: DOC_TYPES.itp.icon, label: DOC_TYPES.itp.label, value: "Nu e necesar încă",
+      sub: `prima ITP până la ${fmtDate(itp.dueBy)}${itp.estimated ? " (estimat din anul fabricației)" : ""}`,
+      status: dayStatus(itp.daysLeft) === "ok" ? "ok" : dayStatus(itp.daysLeft), action: { kind: "doc", type: "itp" },
+    });
+  }
   for (const t of [...new Set([...required, ...Object.keys(docs)])]) {
     if (!Object.hasOwn(DOC_TYPES, t)) continue;
     const d = docs[t];
@@ -161,14 +176,8 @@ export function serviceIntervalFor(v) {
   return { km: 15000, months: 12 };
 }
 
-/* ITP (RO, autoturisme): prima la 3 ani de la înmatriculare, apoi la 2 ani, anual peste 12 ani */
-export function itpMonthsFor(v) {
-  const age = vehicleAge(v);
-  if (age == null) return { months: 24, label: "2 ani" };
-  if (age >= 12) return { months: 12, label: "1 an (mașină de peste 12 ani)" };
-  if (age < 3) return { months: 36 - age * 12, label: "prima ITP (la 3 ani de la fabricație)" };
-  return { months: 24, label: "2 ani" };
-}
+/* ITP: intervalul legal după categorie, utilizare și vechimea din anul inspecției (vezi shared/itp.js) */
+export const itpMonthsFor = (v, from = todayStr()) => itpInterval(v, from);
 
 /* km-ul de pe fișa mașinii e o citire nouă doar dacă întrece istoricul; altfel kmUpdatedAt e doar data importului */
 export function odometerReadings(v) {
@@ -249,6 +258,7 @@ export function profilePatch(account, f, currentPassword, { mail = true } = {}) 
     currency: f.currency,
     company: f.kind === "company" ? { name: f.companyName, cui: f.cui, regCom: f.regCom, address: f.address } : null,
     rcaBrokerUrl: f.rcaBrokerUrl.trim() || null,
+    ...(f.fuelPrices ? { fuelPrices: f.fuelPrices } : {}),
     ...(reminderEmail !== undefined ? { reminderEmail } : {}),
     ...(loginChanged ? { email, currentPassword } : {}),
   };
@@ -287,7 +297,7 @@ export function expiryOptions(type, v, from = renewalStart(v, type)) {
   const months = (n, label, recommended = false) => ({ label, expires: addDaysTo(addMonths(n, from), -1), recommended, months: n });
   const days = (n, label) => ({ label, expires: addDays(n - 1, from), recommended: false, days: n });
   if (type === "itp") {
-    const rec = itpMonthsFor(v);
+    const rec = itpMonthsFor(v, from);
     return [
       months(rec.months, `+${rec.label}`, true),
       ...(rec.months !== 12 ? [months(12, "+1 an")] : []),
@@ -314,13 +324,14 @@ export function renewalPick(d, option) {
 export function docRows(v) {
   const docs = latestDocs(v);
   const required = requiredDocs(v);
-  return [...new Set([...required, ...Object.keys(docs), "casco"])]
+  return [...new Set([...required, ...Object.keys(docs), "itp", "casco"])]
     .filter((t) => Object.hasOwn(DOC_TYPES, t))
     .map((type) => {
       const doc = docs[type] || null;
       const dl = doc ? daysLeft(doc.expires) : null;
       const isRequired = required.includes(type);
-      return { type, doc, daysLeft: dl, required: isRequired, status: doc ? dayStatus(dl) : isRequired ? "missing" : "none" };
+      const notYet = type === "itp" && !doc ? itpRequirement(v, false, todayStr()) : null;
+      return { type, doc, daysLeft: dl, required: isRequired, notYet: notYet && !notYet.required ? notYet : null, status: doc ? dayStatus(dl) : isRequired ? "missing" : "none" };
     });
 }
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { authApi, accountApi, vehiclesApi, setUnauthorizedHandler, migrateLegacySession, readBrowserVehicles, forgetBrowserVehicles } from "./lib/api";
 import { parseHash, nav } from "./lib/nav";
-import { demoVehicle, setCurrency, modalQueue } from "./lib/model";
+import { demoVehicle, setCurrency, setFuelPrices, modalQueue } from "./lib/model";
 import AlertStrip from "./components/AlertStrip";
 import Garage from "./components/Garage";
 import CarPage from "./components/CarPage";
@@ -36,6 +36,7 @@ export default function App() {
   /* opts.password: parola tastată sau cea din sesiunea veche, doar în memorie, ca schimbarea obligatorie să nu o mai ceară */
   const enter = useCallback(async (acc, opts = {}) => {
     setCurrency(acc.currency);
+    setFuelPrices(acc.fuelPrices);
     setAccount(acc);
     setVehicles([]); setLoaded(false); modals.clear();
     setPhase("ready");
@@ -139,6 +140,7 @@ export default function App() {
       try {
         const r = await accountApi.update(fields);
         setCurrency(r.account.currency);
+        setFuelPrices(r.account.fuelPrices);
         setAccount(r.account);
         return { ok: true, verificationSent: !!r.verificationSent, account: r.account };
       } catch (e) {

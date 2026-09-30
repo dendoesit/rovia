@@ -36,7 +36,7 @@ test("ITP chips follow the vehicle age and mark the legal term as recommended", 
   const old = expiryOptions("itp", { year: String(year - 15) }, "2026-10-01");
   assert.equal(old[0].recommended, true);
   assert.equal(old[0].expires, "2027-09-30");
-  assert.deepEqual(old.map((o) => o.label), ["+1 an (mașină de peste 12 ani)", "+2 ani"]);
+  assert.deepEqual(old.map((o) => o.label), ["+1 an (peste 12 ani vechime)", "+2 ani"]);
   const mid = expiryOptions("itp", { year: String(year - 6) }, "2026-10-01");
   assert.equal(mid[0].expires, "2028-09-30");
   assert.deepEqual(mid.map((o) => o.label), ["+2 ani", "+1 an"]);
