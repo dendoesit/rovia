@@ -61,3 +61,14 @@ test("registration fields are validated", () => {
   assert.deepEqual(sanitizeVehicleFields({ firstRegistration: "2025-02-30x", newAtRegistration: "da", usage: "tractor" }), { firstRegistration: null, newAtRegistration: null, usage: null });
   assert.deepEqual(sanitizeVehicleFields({ firstRegistration: "2025-02-03", newAtRegistration: false, usage: "taxi" }), { firstRegistration: "2025-02-03", newAtRegistration: false, usage: "taxi" });
 });
+
+test("stopped aspects and archived cars raise no alerts and are not required", async () => {
+  const { requiredDocs, collectAlerts } = await import("../shared/alerts.js");
+  const base = { id: "r", make: "Rulotă", plate: "B 1 R", category: "rulota", year: "2010", tyres: "attention", nextServiceDate: "2026-01-01", documents: [{ type: "itp", expires: "2023-07-13" }] };
+  assert.ok(collectAlerts([base], TODAY).length >= 2);
+  const quiet = { ...base, ignored: ["itp", "service", "tyres"] };
+  assert.equal(collectAlerts([quiet], TODAY).length, 0);
+  assert.deepEqual(requiredDocs(quiet, TODAY), ["rca"]);
+  assert.equal(collectAlerts([{ ...base, archived: true }], TODAY).length, 0);
+  assert.deepEqual(sanitizeVehicleFields({ ignored: ["itp", "nope", "itp"], archived: "da" }), { ignored: ["itp"], archived: false });
+});

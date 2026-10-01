@@ -736,6 +736,12 @@ function VehicleModal({ v, actions }) {
 
 /* ================= detaliu eveniment ================= */
 
+/* un PDF nu se poate afișa ca imagine: arătăm un link de deschidere */
+function Attachment({ src, alt }) {
+  const [failed, setFailed] = useState(false);
+  return failed ? <span className="btn ghost small">📎 Deschide factura (PDF)</span> : <img className="full" src={src} loading="lazy" alt={alt} onError={() => setFailed(true)} />;
+}
+
 function EventModal({ v, eid, actions }) {
   const [busy, setBusy] = useState(false);
   const e = (v.events || []).find((x) => x.id === eid);
@@ -765,7 +771,7 @@ function EventModal({ v, eid, actions }) {
       </dl>
       {photo && (
         <a href={photo} target="_blank" rel="noopener" className="photo-link">
-          <img className="full" src={photo} loading="lazy" alt={`Poza atașată — ${eventTitle(e)}, ${fmtDate(e.date)}`} />
+          <Attachment src={photo} alt={`Poza atașată — ${eventTitle(e)}, ${fmtDate(e.date)}`} />
         </a>
       )}
       <div className="modal-actions">

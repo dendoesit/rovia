@@ -1,7 +1,8 @@
 /* FleetDeck — model & logică pură (fără DOM). Constantele și regulile comune cu serverul stau în /shared. */
 import { DOC_TYPES, CORE_DOCS, MAINT_TYPES, FUELS, CATEGORIES, CURRENCIES, DEFAULT_CURRENCY, FUEL_CONSUMPTION, DATE_RE, normalizePlate } from "../../shared/domain.js";
 import { bucharestToday, daysLeft as daysLeftFrom, addDaysTo, addMonthsTo, daysBetween, monthKey } from "../../shared/dates.js";
-import { dayStatus, kmStatus, WORST, worst, ATT, latestDocs, collectAlerts, serviceStatus, requiredDocs, vehicleName, zile, fmtKm } from "../../shared/alerts.js";
+import { dayStatus, kmStatus, WORST, worst, ATT, latestDocs, collectAlerts, serviceStatus, requiredDocs, vehicleName, zile, fmtKm, tracks } from "../../shared/alerts.js";
+export { tracks };
 import { itpInterval, itpRequirement, firstItpDue, USAGES } from "../../shared/itp.js";
 import { vignetteQuote } from "../../shared/renewals.js";
 
@@ -76,12 +77,12 @@ export function healthItems(v) {
     sVal = s.dLeft < 0 ? "Depășit" : zile(s.dLeft);
     sSub = `${fmtDate(v.nextServiceDate)}${s.kmLeft != null ? ` · ~${fmtKm(s.kmLeft)} km rămași` : ""}`;
   }
-  items.push({ icon: "🔧", label: "Următorul service", value: sVal, sub: sSub, status: s.status, action: { kind: "service" } });
+  if (tracks(v, "service")) items.push({ icon: "🔧", label: "Următorul service", value: sVal, sub: sSub, status: s.status, action: { kind: "service" } });
 
   const docs = latestDocs(v);
   const required = requiredDocs(v);
   const itp = docs.itp ? null : itpRequirement(v, false, todayStr());
-  if (itp && !itp.required) {
+  if (itp && !itp.required && tracks(v, "itp")) {
     items.push({
       icon: DOC_TYPES.itp.icon, label: DOC_TYPES.itp.label, value: "Nu e necesar încă",
       sub: `prima ITP până la ${fmtDate(itp.dueBy)}${itp.estimated ? " (estimat din anul fabricației)" : ""}`,
@@ -89,7 +90,7 @@ export function healthItems(v) {
     });
   }
   for (const t of [...new Set([...required, ...Object.keys(docs)])]) {
-    if (!Object.hasOwn(DOC_TYPES, t)) continue;
+    if (!Object.hasOwn(DOC_TYPES, t) || !tracks(v, t)) continue;
     const d = docs[t];
     const dl = d ? daysLeft(d.expires) : null;
     items.push({
@@ -102,7 +103,7 @@ export function healthItems(v) {
   }
   const tMap = { good: ["Bune", "ok"], attention: ["De verificat", "warn"] };
   const [tVal, tStat] = tMap[v.tyres] || ["Nesetat", "none"];
-  items.push({ icon: "🛞", label: "Anvelope", value: tVal, sub: v.tyresNote || "Apasă pentru a actualiza", status: tStat, action: { kind: "tyres" } });
+  if (tracks(v, "tyres")) items.push({ icon: "🛞", label: "Anvelope", value: tVal, sub: v.tyresNote || "Apasă pentru a actualiza", status: tStat, action: { kind: "tyres" } });
   return items;
 }
 export const attentionItems = (v) => healthItems(v).filter((i) => ATT.includes(i.status));
@@ -331,7 +332,8 @@ export function docRows(v) {
       const dl = doc ? daysLeft(doc.expires) : null;
       const isRequired = required.includes(type);
       const notYet = type === "itp" && !doc ? itpRequirement(v, false, todayStr()) : null;
-      return { type, doc, daysLeft: dl, required: isRequired, notYet: notYet && !notYet.required ? notYet : null, status: doc ? dayStatus(dl) : isRequired ? "missing" : "none" };
+      const ignored = !tracks(v, type);
+      return { type, doc, daysLeft: dl, required: isRequired, ignored, notYet: notYet && !notYet.required ? notYet : null, status: ignored ? "none" : doc ? dayStatus(dl) : isRequired ? "missing" : "none" };
     });
 }
 
@@ -402,12 +404,14 @@ const SORTS = {
 };
 export const GARAGE_SORTS = { stare: "Stare", nume: "Nume", km: "Kilometraj" };
 
-const FILTERS = { all: () => true, attention: (r) => r.attention.length > 0, missing: (r) => r.missing.length > 0 };
-const passes = (r, filter) => (filter.startsWith("cat:") ? r.v.category === filter.slice(4) : (FILTERS[filter] || FILTERS.all)(r));
+const FILTERS = { all: () => true, attention: (r) => r.attention.length > 0, missing: (r) => r.missing.length > 0, archived: (r) => !!r.v.archived };
+/* mașinile arhivate apar doar sub filtrul „Arhivate” */
+const passes = (r, filter) => (filter === "archived" ? !!r.v.archived : !r.v.archived && (filter.startsWith("cat:") ? r.v.category === filter.slice(4) : (FILTERS[filter] || FILTERS.all)(r)));
 
 export function garageFilters(rows) {
   const cats = Object.keys(CATEGORIES).filter((c) => rows.some((r) => r.v.category === c));
   const list = [["all", "Toate"], ["attention", "Necesită atenție"], ["missing", "Lipsesc documente"], ...(cats.length > 1 ? cats.map((c) => [`cat:${c}`, CATEGORIES[c]]) : [])];
+  if (rows.some((r) => r.v.archived)) list.push(["archived", "Arhivate"]);
   return list.map(([id, label]) => ({ id, label, count: rows.filter((r) => passes(r, id)).length }));
 }
 export function garageView(vehicles, { q = "", filter = "all", sort = "stare" } = {}) {

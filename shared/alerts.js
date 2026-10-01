@@ -34,8 +34,11 @@ export function latestDocs(v) {
 
 export const isTrailer = (v) => v.category === "remorca" || v.category === "rulota";
 /* ITP-ul nu e cerut încă la vehiculele noi până la termenul primei inspecții */
+/* „nu mai urmări": mașina arhivată sau aspectul oprit nu mai produc alerte și nu intră în topuri */
+export const tracks = (v, key) => !v.archived && !(v.ignored || []).includes(key);
+
 export function requiredDocs(v, today = bucharestToday()) {
-  const base = isTrailer(v) ? ["itp", "rca"] : CORE_DOCS;
+  const base = (isTrailer(v) ? ["itp", "rca"] : CORE_DOCS).filter((t) => tracks(v, t));
   const hasItp = !!latestDocs(v).itp;
   return itpRequirement(v, hasItp, today).required ? base : base.filter((t) => t !== "itp");
 }
@@ -54,17 +57,18 @@ export const vehicleName = (v) => `${v.make || ""} ${v.model || ""}`.trim() || v
 /* aceleași alerte în aplicație și în e-mailul zilnic */
 export function vehicleAlerts(v, today = bucharestToday()) {
   const out = [];
+  if (v.archived) return out;
   const car = vehicleName(v);
   const docs = latestDocs(v);
   for (const [t, d] of Object.entries(docs)) {
-    if (!Object.hasOwn(DOC_TYPES, t)) continue;
+    if (!Object.hasOwn(DOC_TYPES, t) || !tracks(v, t)) continue;
     const dl = daysLeft(d.expires, today), st = dayStatus(dl);
     if (!ATT.includes(st)) continue;
     const label = DOC_TYPES[t].label;
     out.push({ st, sort: dl, vid: v.id, car, plate: v.plate, kind: "doc", type: t, daysLeft: dl,
       msg: dl < 0 ? `${label} a expirat acum ${zile(dl)}` : dl === 0 ? `${label} expiră AZI` : `${label} expiră în ${zile(dl)}` });
   }
-  if (!docs.itp) {
+  if (!docs.itp && tracks(v, "itp")) {
     const req = itpRequirement(v, false, today);
     const st = req.required ? "none" : dayStatus(req.daysLeft);
     if (!req.required && ATT.includes(st))
@@ -72,13 +76,13 @@ export function vehicleAlerts(v, today = bucharestToday()) {
         msg: req.daysLeft === 0 ? "prima ITP trebuie făcută AZI" : `prima ITP trebuie făcută în ${zile(req.daysLeft)}` });
   }
   const s = serviceStatus(v, today);
-  if (ATT.includes(s.status)) {
+  if (tracks(v, "service") && ATT.includes(s.status)) {
     const msg = s.driver === "km"
       ? (s.kmLeft <= 0 ? `service depășit cu ${fmtKm(-s.kmLeft)} km` : `service în ~${fmtKm(s.kmLeft)} km`)
       : (s.dLeft < 0 ? `service depășit din ${v.nextServiceDate}` : `service în ${zile(s.dLeft)}`);
     out.push({ st: s.status, sort: s.driver === "km" ? s.kmLeft / 100 : s.dLeft, vid: v.id, car, plate: v.plate, kind: "service", daysLeft: s.dLeft, kmLeft: s.kmLeft, msg });
   }
-  if (v.tyres === "attention") out.push({ st: "warn", sort: 99, vid: v.id, car, plate: v.plate, kind: "tyres", msg: "anvelopele necesită verificare" });
+  if (tracks(v, "tyres") && v.tyres === "attention") out.push({ st: "warn", sort: 99, vid: v.id, car, plate: v.plate, kind: "tyres", msg: "anvelopele necesită verificare" });
   return out;
 }
 

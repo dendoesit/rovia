@@ -107,7 +107,7 @@ export default function FleetOverview({ vehicles, account, actions }) {
         </ChartCard>
 
         <ChartCard
-          title="Top 5 după reparații"
+          title="Top 5 după lucrări (service, piese, reparații)"
           sub={`numărul de lucrări de mentenanță ${periodPhrase(s.range)}, apoi costul`}
           empty={top.repairs.length ? null : "Nicio lucrare de mentenanță înregistrată în perioada aleasă."}
           table={{

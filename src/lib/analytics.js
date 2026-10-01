@@ -1,7 +1,7 @@
 /* Cheltuielile înregistrate și estimările stau mereu separat: nicio estimare nu intră într-un total cheltuit. */
 import { MAINT_TYPES, fuelEstimate, fuelConsumption, odometerReadings, attentionItems, todayStr, currencySymbol } from "./model.js";
 import { addDaysTo, addMonthsTo, daysBetween } from "../../shared/dates.js";
-import { vehicleName } from "../../shared/alerts.js";
+import { vehicleName, tracks } from "../../shared/alerts.js";
 
 export const COST_KEYS = ["fuel", "maintenance", "document", "expense"];
 export const COST_LABELS = { fuel: "Combustibil", maintenance: "Mentenanță", document: "Documente", expense: "Alte cheltuieli" };
@@ -291,22 +291,24 @@ export const dominantCategory = (cats) => {
 };
 
 /* ---------- rezumate pentru pagini ---------- */
-export function fleetSummary(vehicles, periodId, today = todayStr()) {
+export function fleetSummary(all, periodId, today = todayStr()) {
   const range = periodRange(periodId, today);
+  const vehicles = all.filter((v) => !v.archived);
+  const costed = vehicles.filter((v) => tracks(v, "costs"));
   const rates = vehicles.map((v) => kmRate(v, today)).filter(Boolean);
   const fuel = vehicles.map(fuelOutlook).filter(Boolean);
-  const perKmParts = vehicles.map((v) => costPerKm(v, range)).filter(Boolean);
+  const perKmParts = costed.map((v) => costPerKm(v, range)).filter(Boolean);
   const km = sum(perKmParts.map((p) => p.km)), cost = sum(perKmParts.map((p) => p.cost));
   return {
     range,
     count: vehicles.length,
-    spent: spending(vehicles, range),
-    series: spendingSeries(vehicles, range, today),
+    spent: spending(costed, range),
+    series: spendingSeries(costed, range, today),
     kmAn: { total: sum(rates.map((r) => r.kmAn)), cars: rates.length },
     fuelYear: { total: sum(fuel.map((f) => f.costYear)), cars: fuel.length, real: fuel.filter((f) => f.real).length },
     perKm: km ? { perKm: cost / km, km, cost, cars: perKmParts.length } : null,
     attention: vehicles.filter((v) => attentionItems(v).length).length,
-    top: { cost: topByCost(vehicles, range), fuel: topFuel(vehicles), repairs: topRepairs(vehicles, range) },
+    top: { cost: topByCost(costed, range), fuel: topFuel(costed), repairs: topRepairs(vehicles.filter((v) => tracks(v, "repairs")), range) },
     km: kmRows(vehicles, today),
   };
 }

@@ -20,8 +20,9 @@ export async function aiJson(store, accountId, prompt, image) {
   const oKey = process.env.OPENAI_API_KEY;
   if (!gKey && !oKey) fail(501, "citirea AI nu e configurată — setează GEMINI_API_KEY (gratuit, aistudio.google.com) în Netlify");
   await spendAiQuota(store, accountId);
-  const img = image ? image.match(/^data:(image\/[a-z+]+);base64,(.+)$/) : null;
-  if (image && !img) fail(400, "trimite imaginea ca data URL");
+  const img = image ? image.match(/^data:((?:image\/[a-z+]+)|application\/pdf);base64,(.+)$/) : null;
+  if (image && !img) fail(400, "trimite fișierul ca data URL (PDF sau imagine)");
+  const isPdf = img?.[1] === "application/pdf";
   let raw;
   try {
     if (gKey) {
@@ -46,7 +47,7 @@ export async function aiJson(store, accountId, prompt, image) {
           model: process.env.OPENAI_MODEL || "gpt-4o-mini",
           response_format: { type: "json_object" },
           max_tokens: 4096,
-          messages: [{ role: "user", content: [{ type: "text", text: prompt }, ...(img ? [{ type: "image_url", image_url: { url: image } }] : [])] }],
+          messages: [{ role: "user", content: [{ type: "text", text: prompt }, ...(img ? [isPdf ? { type: "file", file: { filename: "factura.pdf", file_data: image } } : { type: "image_url", image_url: { url: image } }] : [])] }],
         }),
       });
       if (!r.ok) fail(502, `serviciul AI a răspuns cu eroare (${r.status})`);

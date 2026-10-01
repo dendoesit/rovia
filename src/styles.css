@@ -314,3 +314,20 @@ button.stat:hover{transform:translateY(-1px);border-color:var(--border-strong)}
 .form-more{margin:10px 0;border:1px solid var(--border);border-radius:12px;padding:8px 12px}
 .form-more summary{cursor:pointer;font-weight:600;font-size:13.5px}
 .car-notes{margin-top:8px;font-size:13.5px;color:var(--muted)}
+
+/* ---------- urmărire ---------- */
+.track-list{border:none;display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;margin:10px 0}
+.track-list:disabled{opacity:.45}
+.archive-toggle{margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
+.track-btn{margin-top:14px}
+@media(max-width:480px){.track-list{grid-template-columns:1fr}}
+/* ---------- facturi ---------- */
+.inv-list{display:grid;gap:10px;margin:12px 0;max-height:55vh;overflow-y:auto}
+.inv-row{border:1px solid var(--border);border-radius:12px;padding:10px 12px}
+.inv-row.saved{opacity:.6}
+.inv-row.error{border-color:#fca5a5;background:var(--red-bg)}
+.inv-head{display:flex;justify-content:space-between;gap:10px;font-size:13.5px;flex-wrap:wrap}
+.inv-fields{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+.inv-fields select,.inv-fields input{width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:9px;font:inherit;font-size:14px;background:var(--bg)}
+.inv-fields .inv-note,.inv-fields .hint{grid-column:1/-1}
+@media(max-width:560px){.inv-fields{grid-template-columns:1fr}}

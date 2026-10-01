@@ -75,7 +75,8 @@ function Health({ v, open }) {
     <>
       {att.length > 0 && <div className={`banner ${cls}`}><span aria-hidden="true">{icon}</span> {lucruri(att.length)}</div>}
       {missing.length > 0 && <div className="banner missing"><span aria-hidden="true">📄</span> Documente obligatorii lipsă: {missing.map((i) => i.label).join(", ")}</div>}
-      {!att.length && !missing.length && <div className="banner ok"><span aria-hidden="true">🟢</span> Totul e în regulă</div>}
+      {v.archived && <div className="banner missing"><span aria-hidden="true">📦</span> Mașină arhivată — nu mai apare în alerte și în dashboard.</div>}
+      {!v.archived && !att.length && !missing.length && <div className="banner ok"><span aria-hidden="true">🟢</span> Totul e în regulă</div>}
       <div className="stats">
         {items.map((i) => (
           <button type="button" key={i.label} className="stat" onClick={() => openAction(i.action)}>
@@ -85,12 +86,16 @@ function Health({ v, open }) {
           </button>
         ))}
       </div>
+      <button type="button" className="btn ghost small track-btn" onClick={() => open("tracking")}>
+        ⚙️ Ce urmărim{v.ignored?.length ? ` · ${v.ignored.length} oprite` : ""}
+      </button>
     </>
   );
 }
 
 /* ---------- Documente ---------- */
 function docState(r) {
+  if (r.ignored) return r.doc ? `Nu se mai urmărește · expiră ${fmtDate(r.doc.expires)}` : "Nu se mai urmărește";
   if (!r.doc && r.notYet) return `Nu e necesar încă · prima ITP până la ${fmtDate(r.notYet.dueBy)}${r.notYet.estimated ? " (estimat)" : ""}`;
   if (!r.doc) return r.required ? "Obligatoriu · lipsește" : "Neadăugat încă";
   if (r.daysLeft < 0) return `Expirat acum ${zile(r.daysLeft)}`;

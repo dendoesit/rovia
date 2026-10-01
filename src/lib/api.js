@@ -61,6 +61,7 @@ export const vehiclesApi = {
 };
 
 export const scanDocument = (image) => req("POST", "/api/scan", { image });
+export const extractInvoice = (file, plates) => req("POST", "/api/invoices/extract", { file, plates });
 
 /* versiunea veche ținea { user, pass } în localStorage — îl folosim o singură dată ca să intrăm, apoi îl ștergem.
    Parola rămâne doar în memorie, pentru schimbarea obligatorie a unei parole slabe. */
