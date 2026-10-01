@@ -58,6 +58,7 @@ export default function Garage({ vehicles, actions }) {
       <div className="section-head garage-head">
         <h1 className="page-title">Garaj</h1>
         <span className="head-buttons">
+          <button type="button" className="btn ghost small" onClick={() => actions.openModal({ kind: "invoices" })}>🧾 Facturi</button>
           <button type="button" className="btn ghost small" onClick={() => actions.openModal({ kind: "import" })}>📥 Import Excel</button>
           <button type="button" className="btn small" onClick={() => nav("#/overview")}>📊 Dashboard flotă</button>
         </span>

@@ -11,6 +11,8 @@ import { ModalShell, Field, readPhoto } from "./ui";
 import AccountModal from "./AccountModal";
 import ImportModal from "./ImportModal";
 import BrowserDataModal from "./BrowserDataModal";
+import InvoiceModal from "./InvoiceModal";
+import TrackingModal from "./TrackingModal";
 import RenewalHelp from "./RenewalHelp";
 import { EURO_CLASSES, VIGNETTE_CATEGORIES, vignetteCategoryFor, euroClassFor } from "../../shared/renewals.js";
 
@@ -794,6 +796,8 @@ export default function ModalHost({ modal, vehicles, actions: appActions, accoun
     case "tyres":   return v && <TyresWizard {...car} />;
     case "service": return v && <ServiceWizard {...car} />;
     case "event":   return v && <EventModal {...car} eid={modal.eid} />;
+    case "invoices": return <InvoiceModal vehicles={vehicles} v={v} actions={actions} account={account} features={features} />;
+    case "tracking": return v && <TrackingModal v={v} actions={actions} />;
     default: return null;
   }
 }

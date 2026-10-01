@@ -7,7 +7,7 @@ import {
 import CarCosts from "./CarCosts";
 
 const TABS = [["health", "Stare"], ["costs", "Costuri"], ["docs", "Documente"], ["history", "Istoric"]];
-const QUICK = [["work", "🔧", "Lucrare"], ["fuel", "⛽", "Alimentare"], ["expense", "💶", "Cheltuială"], ["doc", "📄", "Document"], ["km", "📍", "Kilometraj"]];
+const QUICK = [["work", "🔧", "Lucrare"], ["fuel", "⛽", "Alimentare"], ["expense", "💶", "Cheltuială"], ["doc", "📄", "Document"], ["invoices", "🧾", "Factură"], ["km", "📍", "Kilometraj"]];
 const HISTORY_PAGE = 50;
 
 export default function CarPage({ v, tab, actions, account, features }) {

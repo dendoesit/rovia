@@ -3,6 +3,7 @@ import { bucharestToday } from "../../shared/dates.js";
 import { fail } from "./http.mjs";
 
 const MAX_PHOTO_BYTES = 1_500_000;
+const MAX_PDF_BYTES = 4_500_000;
 const MAX_IMPORT = 300;
 const WRITE_RETRIES = 4;
 
@@ -18,7 +19,11 @@ const ctx = (extra = {}) => {
 
 function validPhoto(photo) {
   if (photo == null) return null;
-  if (typeof photo !== "string" || !/^data:image\/(jpeg|png|webp);base64,/.test(photo)) fail(400, "poza trebuie să fie JPEG, PNG sau WebP");
+  if (typeof photo === "string" && photo.startsWith("data:application/pdf;base64,")) {
+    if (photo.length > MAX_PDF_BYTES) fail(413, "PDF-ul este prea mare (max ~3 MB)");
+    return photo;
+  }
+  if (typeof photo !== "string" || !/^data:image\/(jpeg|png|webp);base64,/.test(photo)) fail(400, "atașamentul trebuie să fie PDF, JPEG, PNG sau WebP");
   if (photo.length > MAX_PHOTO_BYTES) fail(413, "poza este prea mare (max ~1 MB)");
   return photo;
 }
@@ -204,6 +209,6 @@ export async function getPhoto(store, owner, id, eventId) {
   const inline = (legacy.v.events || []).find((e) => e.id === eventId)?.photo;
   const photo = (await store.get(photoKey(owner, id, eventId))) || inline;
   if (!photo) fail(404, "poza nu există");
-  const m = photo.match(/^data:(image\/[a-z+]+);base64,(.+)$/);
+  const m = photo.match(/^data:((?:image\/[a-z+]+)|application\/pdf);base64,(.+)$/);
   return new Response(Buffer.from(m[2], "base64"), { headers: { "Content-Type": m[1], "Cache-Control": "private, max-age=31536000, immutable" } });
 }

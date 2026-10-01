@@ -54,8 +54,17 @@ export const VEHICLE_FIELDS = [
   "make", "model", "plate", "year", "fuel", "category", "driver", "vin",
   "km", "kmUpdatedAt", "tyres", "tyresNote", "nextServiceKm", "nextServiceDate", "notes",
   "euroClass", "vignetteCategory", "civ",
-  "firstRegistration", "newAtRegistration", "usage",
+  "firstRegistration", "newAtRegistration", "usage", "ignored", "archived",
 ];
+
+/* ce se poate opri pe o mașină („nu mai urmări"): alerte + topuri pentru aspectul respectiv */
+export const TRACKABLE = {
+  service: "Service / revizii",
+  repairs: "Reparații și lucrări (în topuri)",
+  tyres: "Anvelope",
+  costs: "Costuri (în dashboard)",
+  itp: "ITP", rca: "RCA", rovinieta: "Rovinietă", casco: "CASCO", warranty: "Garanție", leasing: "Leasing",
+};
 
 export class ValidationError extends Error {
   constructor(message) { super(message); this.name = "ValidationError"; }
@@ -115,6 +124,8 @@ export function sanitizeVehicleFields(src) {
     else if (k === "firstRegistration") out[k] = typeof val === "string" && DATE_RE.test(val) ? val : null;
     else if (k === "newAtRegistration") out[k] = val === true || val === false ? val : null;
     else if (k === "usage") out[k] = USAGES[val] ? val : null;
+    else if (k === "ignored") out[k] = Array.isArray(val) ? [...new Set(val.filter((x) => Object.hasOwn(TRACKABLE, x)))] : [];
+    else if (k === "archived") out[k] = val === true;
     else out[k] = toText(val, 120);
   }
   return out;

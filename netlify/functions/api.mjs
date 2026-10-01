@@ -6,6 +6,7 @@ import { HttpError, json, fail, readJson, cookie, assertSameOrigin } from "../li
 import * as auth from "../lib/auth.mjs";
 import * as vehicles from "../lib/vehicles.mjs";
 import { scanDocument, lookupCompany, aiConfigured } from "../lib/services.mjs";
+import { extractInvoice } from "../lib/invoices.mjs";
 import { sendPasswordReset, sendReminderVerification, mailConfigured } from "../lib/mail.mjs";
 import { consume, cooldown, clientIp, hashKey } from "../lib/limits.mjs";
 import { ValidationError } from "../../shared/domain.js";
@@ -112,6 +113,7 @@ const PRIVATE = {
   },
   "GET company": async ({ url }) => json(await lookupCompany(url.searchParams.get("cui"))),
   "POST scan": async ({ req, store, account }) => json(await scanDocument(store, account.id, (await readJson(req, 2_500_000)).image)),
+  "POST invoices/extract": async ({ req, store, account }) => json(await extractInvoice(store, account.id, await readJson(req, 6_000_000))),
 
   "GET vehicles": async ({ store, account }) => json(await vehicles.listVehicles(store, account.id)),
   "POST vehicles": async ({ req, store, account }) => json(await vehicles.createVehicle(store, account.id, await readJson(req, 200_000)), 201),
@@ -119,7 +121,7 @@ const PRIVATE = {
   "GET vehicles/:id": async ({ store, account, params }) => json(await vehicles.getVehicle(store, account.id, params.id)),
   "PATCH vehicles/:id": async ({ req, store, account, params }) => json(await vehicles.patchVehicle(store, account.id, params.id, await readJson(req, 50_000))),
   "DELETE vehicles/:id": async ({ store, account, params }) => { await vehicles.deleteVehicle(store, account.id, params.id); return new Response(null, { status: 204 }); },
-  "POST vehicles/:id/events": async ({ req, store, account, params }) => json(await vehicles.addEvent(store, account.id, params.id, await readJson(req, 2_500_000)), 201),
+  "POST vehicles/:id/events": async ({ req, store, account, params }) => json(await vehicles.addEvent(store, account.id, params.id, await readJson(req, 5_000_000)), 201),
   "DELETE vehicles/:id/events/:eid": async ({ store, account, params }) => json(await vehicles.deleteEvent(store, account.id, params.id, params.eid)),
   "GET vehicles/:id/photos/:eid": async ({ store, account, params }) => vehicles.getPhoto(store, account.id, params.id, params.eid),
   "PUT vehicles/:id/documents/:type": async ({ req, store, account, params }) => json(await vehicles.upsertDocument(store, account.id, params.id, params.type, await readJson(req, 2_500_000))),
