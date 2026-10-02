@@ -26,17 +26,21 @@ export async function aiJson(store, accountId, prompt, image) {
   let raw;
   try {
     if (gKey) {
-      const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+      const model = process.env.GEMINI_MODEL || "gemini-3.5-flash";
       const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
         method: "POST",
         signal: AbortSignal.timeout(AI_TIMEOUT_MS),
         headers: { "Content-Type": "application/json", "x-goog-api-key": gKey },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }, ...(img ? [{ inline_data: { mime_type: img[1], data: img[2] } }] : [])] }],
-          generationConfig: { response_mime_type: "application/json", maxOutputTokens: 4096, thinkingConfig: { thinkingBudget: 0 } },
+          generationConfig: { response_mime_type: "application/json", maxOutputTokens: 8192 },
         }),
       });
-      if (!r.ok) fail(502, `Gemini a răspuns cu eroare (${r.status})`);
+      if (!r.ok) {
+        const detail = await r.json().catch(() => null);
+        console.error("gemini", model, r.status, detail?.error?.message);
+        fail(502, `Gemini a răspuns cu eroare (${r.status}${detail?.error?.message ? ": " + String(detail.error.message).slice(0, 160) : ""})`);
+      }
       raw = (await r.json()).candidates?.[0]?.content?.parts?.[0]?.text;
     } else {
       const r = await fetch("https://api.openai.com/v1/chat/completions", {

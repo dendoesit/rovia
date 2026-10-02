@@ -51,7 +51,7 @@ Toate sunt **doar pentru backend** și toate sunt opționale; lista completă, c
 | `RESEND_API_KEY` | trimiterea e-mailurilor: remindere zilnice, confirmarea adresei de remindere, resetarea parolei ([resend.com](https://resend.com)) |
 | `REMINDER_FROM` | expeditorul, ex. `FleetDeck <remindere@firma-ta.ro>`; domeniul trebuie verificat în Resend (implicit `FleetDeck <onboarding@resend.dev>`, doar pentru test) |
 | `GEMINI_API_KEY` | scanarea documentelor cu AI, varianta gratuită ([aistudio.google.com](https://aistudio.google.com), fără card); maxim 60 de citiri pe zi pentru fiecare cont |
-| `GEMINI_MODEL` | opțional, implicit `gemini-2.5-flash` |
+| `GEMINI_MODEL` | opțional, implicit `gemini-3.5-flash` |
 | `OPENAI_API_KEY` | alternativă cu plată pentru scanare, folosită doar dacă lipsește cheia Gemini |
 | `OPENAI_MODEL` | opțional, implicit `gpt-4o-mini` |
 
