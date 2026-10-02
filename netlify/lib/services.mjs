@@ -5,7 +5,8 @@ import { consume } from "./limits.mjs";
 const AI_DAILY_LIMIT = 60;
 const AI_GLOBAL_DAILY_LIMIT = 500;
 const AI_TIMEOUT_MS = 25_000;
-const GEMINI_BUSY = [429, 500, 503];
+const GEMINI_BUSY = [500, 503];
+const isDailyQuota = (detail) => JSON.stringify(detail?.error?.details || []).includes("PerDay");
 const GEMINI_RETRY_DELAYS_MS = [1_500, 3_000];
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -50,7 +51,8 @@ export async function aiJson(store, accountId, prompt, image) {
       if (!r.ok) {
         const detail = await r.json().catch(() => null);
         console.error("gemini", model, r.status, detail?.error?.message);
-        if (GEMINI_BUSY.includes(r.status)) fail(503, "Gemini e supraîncărcat acum — mai încearcă o dată peste un minut");
+        if (r.status === 429 && isDailyQuota(detail)) fail(429, "s-a terminat limita gratuită Gemini de azi — revino mâine sau completează factura manual");
+        if (r.status === 429 || GEMINI_BUSY.includes(r.status)) fail(503, "Gemini e supraîncărcat acum — mai încearcă o dată peste un minut");
         fail(502, `Gemini a răspuns cu eroare (${r.status}${detail?.error?.message ? ": " + String(detail.error.message).slice(0, 160) : ""})`);
       }
       raw = (await r.json()).candidates?.[0]?.content?.parts?.[0]?.text;
