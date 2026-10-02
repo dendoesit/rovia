@@ -5,6 +5,18 @@ import { consume } from "./limits.mjs";
 const AI_DAILY_LIMIT = 60;
 const AI_GLOBAL_DAILY_LIMIT = 500;
 const AI_TIMEOUT_MS = 25_000;
+const GEMINI_BUSY = [429, 500, 503];
+const GEMINI_RETRY_DELAYS_MS = [1_500, 3_000];
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function fetchGemini(url, init) {
+  const deadline = Date.now() + AI_TIMEOUT_MS;
+  for (const delay of [...GEMINI_RETRY_DELAYS_MS, null]) {
+    const r = await fetch(url, { ...init, signal: AbortSignal.timeout(Math.max(1, deadline - Date.now())) });
+    if (r.ok || !GEMINI_BUSY.includes(r.status) || delay == null || Date.now() + delay >= deadline) return r;
+    await sleep(delay);
+  }
+}
 
 async function spendAiQuota(store, accountId) {
   const day = new Date().toISOString().slice(0, 10);
@@ -27,9 +39,8 @@ export async function aiJson(store, accountId, prompt, image) {
   try {
     if (gKey) {
       const model = process.env.GEMINI_MODEL || "gemini-3.5-flash";
-      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+      const r = await fetchGemini(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
         method: "POST",
-        signal: AbortSignal.timeout(AI_TIMEOUT_MS),
         headers: { "Content-Type": "application/json", "x-goog-api-key": gKey },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }, ...(img ? [{ inline_data: { mime_type: img[1], data: img[2] } }] : [])] }],
@@ -39,6 +50,7 @@ export async function aiJson(store, accountId, prompt, image) {
       if (!r.ok) {
         const detail = await r.json().catch(() => null);
         console.error("gemini", model, r.status, detail?.error?.message);
+        if (GEMINI_BUSY.includes(r.status)) fail(503, "Gemini e supraîncărcat acum — mai încearcă o dată peste un minut");
         fail(502, `Gemini a răspuns cu eroare (${r.status}${detail?.error?.message ? ": " + String(detail.error.message).slice(0, 160) : ""})`);
       }
       raw = (await r.json()).candidates?.[0]?.content?.parts?.[0]?.text;
